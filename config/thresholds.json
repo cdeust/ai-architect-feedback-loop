@@ -1,0 +1,56 @@
+{
+  "stage_1": {
+    "relevance_score_minimum": 0.5,
+    "relevance_categories": [
+      "api_change",
+      "behavior_change",
+      "dependency_change",
+      "config_change",
+      "schema_change",
+      "performance_change",
+      "security_change",
+      "prompting",
+      "retrieval",
+      "verification",
+      "embeddings",
+      "inference",
+      "cost_optimization",
+      "benchmarks"
+    ]
+  },
+  "stage_2": {
+    "compound_score_minimum": 0.3,
+    "engines_affected_minimum": 2
+  },
+  "stage_4": {
+    "prd_quality_minimum": 0.80
+  },
+  "stage_6": {
+    "prohibited_patterns_file": "config/prohibited_patterns.txt",
+    "orphan_detection_extensions": [
+      ".swift",
+      ".md",
+      ".json",
+      ".txt"
+    ],
+    "orphan_detection_exclude_dirs": [
+      ".build",
+      ".git",
+      "runs",
+      "logs",
+      "benchmarks"
+    ]
+  },
+  "stage_8": {
+    "regression_threshold": 0.05,
+    "dimensions": [
+      "completeness",
+      "accuracy",
+      "consistency",
+      "actionability"
+    ]
+  },
+  "retry": {
+    "max_attempts": 3
+  }
+}

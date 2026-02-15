@@ -1,0 +1,12 @@
+TODO
+FIXME
+HACK
+XXX
+TEMP\b
+PLACEHOLDER
+placeholder
+not implemented
+stub\b
+@_exported\s+import
+\btypealias\b
+\bas\s+Any\b

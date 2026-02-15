@@ -1,0 +1,92 @@
+{
+  "description": "Manual semantic relationships between engines. Merged with auto-detected Package.swift dependencies.",
+  "engines": {
+    "SharedUtilities": {
+      "role": "common_infrastructure",
+      "feeds": [
+        "RAGEngine",
+        "VerificationEngine",
+        "OrchestrationEngine",
+        "MetaPromptingEngine",
+        "StrategyEngine",
+        "EncryptionEngine",
+        "VisionEngine",
+        "VisionEngineApple"
+      ],
+      "fed_by": []
+    },
+    "RAGEngine": {
+      "role": "retrieval",
+      "feeds": [
+        "OrchestrationEngine"
+      ],
+      "fed_by": [
+        "SharedUtilities"
+      ]
+    },
+    "VerificationEngine": {
+      "role": "verification",
+      "feeds": [
+        "OrchestrationEngine"
+      ],
+      "fed_by": [
+        "SharedUtilities"
+      ]
+    },
+    "OrchestrationEngine": {
+      "role": "orchestration",
+      "feeds": [],
+      "fed_by": [
+        "SharedUtilities",
+        "RAGEngine",
+        "VerificationEngine",
+        "MetaPromptingEngine",
+        "StrategyEngine",
+        "VisionEngine"
+      ]
+    },
+    "MetaPromptingEngine": {
+      "role": "prompting",
+      "feeds": [
+        "OrchestrationEngine"
+      ],
+      "fed_by": [
+        "SharedUtilities"
+      ]
+    },
+    "StrategyEngine": {
+      "role": "strategy",
+      "feeds": [
+        "OrchestrationEngine"
+      ],
+      "fed_by": [
+        "SharedUtilities"
+      ]
+    },
+    "EncryptionEngine": {
+      "role": "encryption",
+      "feeds": [],
+      "fed_by": [
+        "SharedUtilities"
+      ]
+    },
+    "VisionEngine": {
+      "role": "vision",
+      "feeds": [
+        "OrchestrationEngine",
+        "VisionEngineApple"
+      ],
+      "fed_by": [
+        "SharedUtilities"
+      ]
+    },
+    "VisionEngineApple": {
+      "role": "vision",
+      "feeds": [],
+      "fed_by": [
+        "SharedUtilities",
+        "VisionEngine"
+      ]
+    }
+  }
+}
