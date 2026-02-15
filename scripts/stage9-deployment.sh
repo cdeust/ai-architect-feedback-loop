@@ -6,9 +6,9 @@ set -euo pipefail
 # ============================================================================
 #
 # Wraps the prd-builder's existing `make distribute` target which runs:
-#   key injection -> build 8 XCFrameworks -> encrypt -> 38 encryption tests
+#   key injection -> build 8 XCFrameworks -> encrypt -> 40 encryption tests
 #
-# Verifies post-distribute state: placeholder keys restored, exit code 0.
+# Verifies post-distribute state: public keys injected (not placeholder), exit code 0.
 #
 # Usage:
 #   scripts/stage9-deployment.sh \
@@ -128,35 +128,43 @@ fi
 log "INFO" "Encryption tests: $ENCRYPTION_PASSED/$ENCRYPTION_TOTAL"
 
 # ---------------------------------------------------------------------------
-# Verify placeholder keys restored
+# Verify public key was injected (not still a placeholder)
 # ---------------------------------------------------------------------------
 
-PLACEHOLDER_RESTORED=true
+KEY_INJECTED=true
 PLACEHOLDER_KEY="PLACEHOLDER_PUBLIC_KEY_INJECT_AT_BUILD_TIME"
 
-VALIDATOR_FILE="$BUILDER_DIR/packages/AIPRDEncryptionEngine/Sources/Crypto/SecureLicenseValidator.swift"
+VALIDATOR_FILE="$BUILDER_DIR/packages/AIPRDEncryptionEngine/Sources/Licensing/SecureLicenseValidator.swift"
 VALIDATE_SCRIPT="$BUILDER_DIR/scripts/distribution/validate-license.swift"
 
 if [[ -f "$VALIDATOR_FILE" ]]; then
-    if ! grep -q "$PLACEHOLDER_KEY" "$VALIDATOR_FILE"; then
-        log "ERROR" "Placeholder key NOT restored in SecureLicenseValidator.swift"
-        PLACEHOLDER_RESTORED=false
+    if grep -q "$PLACEHOLDER_KEY" "$VALIDATOR_FILE"; then
+        log "ERROR" "Placeholder key still present in SecureLicenseValidator.swift — injection failed"
+        KEY_INJECTED=false
+    elif grep -qE 'publicKeyBase64 = "[A-Za-z0-9+/=]{40,}"' "$VALIDATOR_FILE"; then
+        log "INFO" "Public key verified in SecureLicenseValidator.swift"
     else
-        log "INFO" "Placeholder key verified in SecureLicenseValidator.swift"
+        log "WARN" "No recognizable key found in SecureLicenseValidator.swift"
+        KEY_INJECTED=false
     fi
 else
     log "WARN" "SecureLicenseValidator.swift not found at expected path"
+    KEY_INJECTED=false
 fi
 
 if [[ -f "$VALIDATE_SCRIPT" ]]; then
-    if ! grep -q "$PLACEHOLDER_KEY" "$VALIDATE_SCRIPT"; then
-        log "ERROR" "Placeholder key NOT restored in validate-license.swift"
-        PLACEHOLDER_RESTORED=false
+    if grep -q "$PLACEHOLDER_KEY" "$VALIDATE_SCRIPT"; then
+        log "ERROR" "Placeholder key still present in validate-license.swift — injection failed"
+        KEY_INJECTED=false
+    elif grep -qE 'publicKeyBase64 = "[A-Za-z0-9+/=]{40,}"' "$VALIDATE_SCRIPT"; then
+        log "INFO" "Public key verified in validate-license.swift"
     else
-        log "INFO" "Placeholder key verified in validate-license.swift"
+        log "WARN" "No recognizable key found in validate-license.swift"
+        KEY_INJECTED=false
     fi
 else
     log "WARN" "validate-license.swift not found at expected path"
+    KEY_INJECTED=false
 fi
 
 # ---------------------------------------------------------------------------
@@ -168,9 +176,9 @@ if [[ "$DIST_EXIT" -ne 0 ]]; then
     OVERALL_RESULT="FAIL"
     log "ERROR" "Deployment simulation FAILED (make distribute exit code: $DIST_EXIT)"
 fi
-if [[ "$PLACEHOLDER_RESTORED" == "false" ]]; then
+if [[ "$KEY_INJECTED" == "false" ]]; then
     OVERALL_RESULT="FAIL"
-    log "ERROR" "Deployment simulation FAILED (placeholder keys not restored)"
+    log "ERROR" "Deployment simulation FAILED (public key not properly injected)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -178,12 +186,12 @@ fi
 # ---------------------------------------------------------------------------
 
 python3 - "$OUTPUT_DIR" "$OVERALL_RESULT" "$DIST_EXIT" "$DURATION" \
-    "$ENCRYPTION_PASSED" "$ENCRYPTION_TOTAL" "$PLACEHOLDER_RESTORED" <<'PYEOF'
+    "$ENCRYPTION_PASSED" "$ENCRYPTION_TOTAL" "$KEY_INJECTED" <<'PYEOF'
 import json
 import sys
 from datetime import datetime, timezone
 
-output_dir, result, exit_code, duration, enc_passed, enc_total, placeholder = sys.argv[1:8]
+output_dir, result, exit_code, duration, enc_passed, enc_total, key_injected = sys.argv[1:8]
 
 report = {
     "stage": "deployment_simulation",
@@ -195,7 +203,7 @@ report = {
         "passed": int(enc_passed),
         "total": int(enc_total),
     },
-    "placeholder_keys_restored": placeholder == "true",
+    "public_key_injected": key_injected == "true",
 }
 
 report_path = f"{output_dir}/deployment_report.json"
@@ -209,7 +217,7 @@ print(json.dumps({
     "exit_code": int(exit_code),
     "duration_seconds": int(duration),
     "encryption_tests": f"{enc_passed}/{enc_total}",
-    "placeholder_keys_restored": placeholder == "true",
+    "public_key_injected": key_injected == "true",
 }))
 PYEOF
 
