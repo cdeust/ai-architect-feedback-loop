@@ -178,6 +178,11 @@ Response format:
 }
 ```
 
+**contract_changes rules:**
+- The `protocol` field MUST be a real protocol name from `config/contracts.json` (e.g. `RAGEngineProtocol`, `MetaPromptingEngineProtocol`). NEVER use `"N/A"`, `"none"`, or placeholder names.
+- If an engine modification does NOT change any protocol (e.g. DTO-only or internal-only changes), use an **empty array**: `"contract_changes": []`
+- Only list contract_changes when an actual protocol method signature or port interface changes.
+
 All file paths in `modifications[].files[].path` MUST exist in the builder repo (verify with Glob before writing).
 Every engine in `affected_engines` MUST have at least one entry in `modifications`.
 Compute the full response BEFORE writing. Do NOT edit the file after writing.

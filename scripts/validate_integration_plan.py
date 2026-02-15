@@ -146,6 +146,10 @@ def check_contract_references(plan, contracts):
             protocol = change.get("protocol", "")
             engine = mod.get("engine", "")
 
+            # Skip entries that explicitly indicate no protocol change
+            if not protocol or protocol.lower() in ("n/a", "none", ""):
+                continue
+
             # Check if protocol exists in contracts for this engine
             engine_contracts = engines_data.get(engine, {})
             ports = [p["protocol"] for p in engine_contracts.get("ports", [])]
