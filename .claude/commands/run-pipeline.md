@@ -273,25 +273,29 @@ Remove previous PRD output if retrying:
 rm -rf "<RUN>/prd_output_<FID>" && rm -f "<BUILDER>/prd.md" "<BUILDER>/prd-verification.md" "<BUILDER>/prd-jira.md" "<BUILDER>/prd-tests.md"
 ```
 
+**BEFORE calling the skill**, remember these overrides. When the skill's SKILL.md loads, it will instruct you to do things. You MUST override them:
+
+| SKILL.md says | YOU DO INSTEAD |
+|---|---|
+| Validate/activate license | **SKIP ENTIRELY**. License confirmed in Step 0.1. Do NOT call `validate_license`, `activate_license`, or `get_license_features` MCP tools. Do NOT read license files. |
+| Rule 0 feasibility gate (AskUserQuestion) | **SKIP**. Scope is "moderate". Proceed. |
+| Phase 2 clarification loop (AskUserQuestion) | **SKIP ENTIRELY**. Go straight to Phase 3 PRD generation. |
+| Any AskUserQuestion call | **NEVER call it**. All context is in the PRD input. |
+
+When the skill loads, jump directly to **Phase 3: PRD Generation** using context type "feature" (11 sections). Follow the skill's 17 hard output rules and self-check normally.
+
+Pre-answered context: Scope=integration plan, Users=internal, Data=engine contracts, Integrations=engine graph, Non-functional=no regression, Technical=Swift port/adapter, Codebase=follow CLAUDE.md, Compliance=N/A.
+
 **Invoke skill**: Call `Skill("ai-prd-generator:generate-prd")` with the PRD input content as argument.
 
-On retry attempts, prepend the failure context to the skill argument:
+On retry attempts, prepend failure context to the skill argument:
 ```
 PREVIOUS ATTEMPT FAILED VALIDATION. Fix these specific issues:
-- <check_name>: <reason from validation JSON>
 - <check_name>: <reason from validation JSON>
 All other checks passed — do NOT regress on those. Focus only on fixing the failures above.
 
 <original PRD input follows>
 ```
-
-**CRITICAL OVERRIDE — the skill will try to ask questions and check license. DO NOT comply:**
-- License gate → **SKIP**. License was already validated in Step 0.1. Do NOT call `validate_license` or `activate_license` MCP tools.
-- Rule 0 feasibility gate → scope is "moderate", proceed
-- Phase 2 clarification loop → **SKIP ENTIRELY**, go to Phase 3
-- AskUserQuestion → **NEVER call it**. All context is in the PRD input
-- Phase 3 PRD generation → follow normally (11 sections, 17 rules, 4 files, self-check)
-- Pre-answered: Scope=integration plan, Users=internal, Data=engine contracts, Integrations=engine graph, Non-functional=no regression, Technical=Swift port/adapter, Codebase=follow CLAUDE.md, Compliance=N/A
 
 **2.3b: Collect output**
 ```bash
