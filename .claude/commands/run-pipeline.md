@@ -53,13 +53,26 @@ This `pipeline/run-<RUN_TS>` branch in the builder serves as the **base branch**
 If either checkout fails: print `[FAIL] Step 0.0: Could not create working branch` and **stop entirely**.
 Print: `[PASS] Step 0.0: Working branches created — pipeline/run-<RUN_TS>`
 
-## Step 0.1: License
+## Step 0.1: License (one-time check)
+
+Check if a license key exists. If it does, validate it **once** here. The result applies to the entire run — no further license checks needed (including when invoking the ai-prd-generator skill).
+
+```bash
+test -f ~/.aiprd/license-key && echo "KEY_EXISTS" || echo "NO_KEY"
+```
+
+- If `NO_KEY`: print `[FAIL] License key not found at ~/.aiprd/license-key` and **stop entirely**.
+- If `KEY_EXISTS`: validate once:
 
 ```bash
 KEY=$(cat ~/.aiprd/license-key 2>/dev/null) && curl -sf -X POST 'https://sandbox-api.polar.sh/v1/customer-portal/license-keys/validate' -H 'Content-Type: application/json' -d "{\"key\":\"$KEY\",\"organization_id\":\"33bddceb-c04b-40f7-a881-54402f1ddd4f\"}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['status']=='granted'; print('granted')"
 ```
 
 If this fails, try production org `3c29257d-7ddb-4ef1-98d4-3d63c491d653` at `api.polar.sh`. If both fail: print `[FAIL] License invalid` and **stop entirely**.
+
+Print: `[PASS] Step 0.1: License validated — granted`
+
+**License is now validated for this run. Do NOT re-validate at any later step.** When the ai-prd-generator skill runs its own license gate, skip it — the license is already confirmed.
 
 ## Step 0.2: Detect existing PRs
 
@@ -108,13 +121,15 @@ For each finding ID (`FID`), run Steps 2.1 through 5.3 sequentially. Track resul
 - `PASSED_FINDINGS` = findings that pass all stages
 - `FAILED_FINDINGS` = findings that fail (with reason)
 
-If a finding fails at any stage, skip it and move to the next finding.
+If a finding exhausts all retry attempts at any stage, skip it and move to the next finding.
 
-### Step 2.1: Stage 2 — Impact Analysis (double-run)
+### Step 2.1: Stage 2 — Impact Analysis (double-run, max 3 attempts)
+
+**For attempt 1 to 3:**
 
 **Run 1** — assembles prompt, exits 42:
 ```bash
-rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage2-impact-analysis.sh" --findings "<RUN>/prioritized_findings.json" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --packages-dir "<BUILDER>/packages" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
+rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage2_<FID>.json" "<RUN>/response_stage2_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage2-impact-analysis.sh" --findings "<RUN>/prioritized_findings.json" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --packages-dir "<BUILDER>/packages" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
 ```
 
 Exit code 42 is expected (means prompt is ready). Read `<RUN>/pending_stage.json` with Read tool. Then read the prompt file from the `prompt_file` field.
@@ -124,7 +139,8 @@ Exit code 42 is expected (means prompt is ready). Read `<RUN>/pending_stage.json
 2. Identify affected engines for this finding's category
 3. Trace propagation paths through dependency graph
 4. Read relevant protocol files in `<BUILDER>/packages/` to assess contract impact
-5. Write response JSON to the `expected_response` path from the descriptor
+5. On retry: read the previous validation failure from `<RUN>/validation_stage2_<FID>.json` and fix the specific issues
+6. Write response JSON to the `expected_response` path from the descriptor
 
 Response format:
 ```json
@@ -158,9 +174,13 @@ Response format:
 Compute the score BEFORE writing. Do NOT edit the file after writing.
 
 **Run 2** — re-run same command (response file now exists, script validates):
-Same bash command as Run 1 (without the `rm -f`).
+Same bash command as Run 1 (without the `rm -f` at the start).
 
-Read `<RUN>/validation_stage2_<FID>.json`. If `result` != "ACCEPTED": `[FAIL] Stage 2: <reason>`, skip finding.
+Read `<RUN>/validation_stage2_<FID>.json`:
+- If ACCEPTED: `[PASS] Step 2.1: Stage 2 accepted (attempt N)` — proceed.
+- If REJECTED: `[RETRY] Step 2.1: Stage 2 rejected — <reason>`. Loop to next attempt.
+
+After 3 failures: `[FAIL] Step 2.1: Stage 2 exhausted` — skip this finding.
 
 ### Step 2.2: Extract contracts (once per run, before first Stage 3)
 
@@ -172,11 +192,13 @@ python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<BUILDER>/packages" --f
 
 Read `<RUN>/contracts.json` — it contains the real protocol/port names per engine. Use these for all Stage 3 `contract_changes` fields.
 
-### Step 2.3: Stage 3 — Integration Design (double-run)
+### Step 2.3: Stage 3 — Integration Design (double-run, max 3 attempts)
+
+**For attempt 1 to 3:**
 
 **Run 1:**
 ```bash
-rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage3-integration-design.sh" --impact-dir "<RUN>" --packages-dir "<BUILDER>/packages" --claude-md "<BUILDER>/CLAUDE.md" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
+rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage3_<FID>.json" "<RUN>/response_stage3_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage3-integration-design.sh" --impact-dir "<RUN>" --packages-dir "<BUILDER>/packages" --claude-md "<BUILDER>/CLAUDE.md" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
 ```
 
 Read descriptor + prompt. Design the integration:
@@ -186,6 +208,7 @@ Read descriptor + prompt. Design the integration:
 4. Plan per-engine modifications — every `affected_engine` MUST have modifications
 5. All file paths MUST exist (verify with Glob)
 6. Identify cross-engine touchpoints
+7. On retry: read `<RUN>/validation_stage3_<FID>.json` and fix the specific failed checks
 
 Response format:
 ```json
@@ -217,11 +240,17 @@ All file paths in `modifications[].files[].path` MUST exist in the builder repo 
 Every engine in `affected_engines` MUST have at least one entry in `modifications`.
 Compute the full response BEFORE writing. Do NOT edit the file after writing.
 
-**Run 2** — re-run same command. Read `<RUN>/validation_stage3_<FID>.json`. If not ACCEPTED: skip finding.
+**Run 2** — re-run same command (without the `rm -f` at the start).
 
-### Step 2.3: Stage 4 — PRD Generation (skill invocation)
+Read `<RUN>/validation_stage3_<FID>.json`:
+- If ACCEPTED: `[PASS] Step 2.3: Stage 3 accepted (attempt N)` — proceed.
+- If REJECTED: Read the `checks` array, collect failed checks with reasons. `[RETRY] Step 2.3: Stage 3 rejected — <failed checks>`. Loop to next attempt.
 
-**Compose PRD input:**
+After 3 failures: `[FAIL] Step 2.3: Stage 3 exhausted` — skip this finding.
+
+### Step 2.4: Stage 4 — PRD Generation (skill invocation, max 3 attempts)
+
+**Compose PRD input** (once, before the retry loop):
 ```bash
 python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<BUILDER>/packages" --format markdown --output "<RUN>/contracts_<FID>.md" 2>&1
 ```
@@ -234,21 +263,41 @@ python3 "<SCRIPTS>/compose_prd_input.py" --impact-report "<RUN>/impact_report_<F
 
 **Read** `<RUN>/prd_input_<FID>.md`.
 
+**For attempt 1 to 3:**
+
+**2.3a: Generate PRD**
+
+Remove previous PRD output if retrying:
+```bash
+rm -rf "<RUN>/prd_output_<FID>" && rm -f "<BUILDER>/prd.md" "<BUILDER>/prd-verification.md" "<BUILDER>/prd-jira.md" "<BUILDER>/prd-tests.md"
+```
+
 **Invoke skill**: Call `Skill("ai-prd-generator:generate-prd")` with the PRD input content as argument.
 
-**CRITICAL OVERRIDE — the skill will try to ask questions. DO NOT comply:**
+On retry attempts, prepend the failure context to the skill argument:
+```
+PREVIOUS ATTEMPT FAILED VALIDATION. Fix these specific issues:
+- <check_name>: <reason from validation JSON>
+- <check_name>: <reason from validation JSON>
+All other checks passed — do NOT regress on those. Focus only on fixing the failures above.
+
+<original PRD input follows>
+```
+
+**CRITICAL OVERRIDE — the skill will try to ask questions and check license. DO NOT comply:**
+- License gate → **SKIP**. License was already validated in Step 0.1. Do NOT call `validate_license` or `activate_license` MCP tools.
 - Rule 0 feasibility gate → scope is "moderate", proceed
 - Phase 2 clarification loop → **SKIP ENTIRELY**, go to Phase 3
 - AskUserQuestion → **NEVER call it**. All context is in the PRD input
 - Phase 3 PRD generation → follow normally (11 sections, 17 rules, 4 files, self-check)
 - Pre-answered: Scope=integration plan, Users=internal, Data=engine contracts, Integrations=engine graph, Non-functional=no regression, Technical=Swift port/adapter, Codebase=follow CLAUDE.md, Compliance=N/A
 
-**Collect output**: After skill completes, copy files:
+**2.3b: Collect output**
 ```bash
 mkdir -p "<RUN>/prd_output_<FID>" && for f in prd.md prd-verification.md prd-jira.md prd-tests.md; do [ -f "<BUILDER>/$f" ] && mv "<BUILDER>/$f" "<RUN>/prd_output_<FID>/"; done
 ```
 
-**Validate:**
+**2.3c: Validate**
 ```bash
 python3 "<SCRIPTS>/extract_prd_metrics.py" --prd "<RUN>/prd_output_<FID>/prd.md" --verification "<RUN>/prd_output_<FID>/prd-verification.md" --tests "<RUN>/prd_output_<FID>/prd-tests.md" --output "<RUN>/prd_output_<FID>/metrics.json" 2>&1
 ```
@@ -257,7 +306,11 @@ python3 "<SCRIPTS>/extract_prd_metrics.py" --prd "<RUN>/prd_output_<FID>/prd.md"
 python3 "<SCRIPTS>/validate_prd_output.py" --prd-dir "<RUN>/prd_output_<FID>" --integration-plan "<RUN>/integration_plan_<FID>.json" --engine-graph "<CONFIG>/engine_graph.json" --metrics "<RUN>/prd_output_<FID>/metrics.json" --config "<CONFIG>/thresholds.json" --output "<RUN>/validation_stage4_<FID>.json" 2>&1
 ```
 
-Read validation. If not ACCEPTED: skip finding.
+Read `<RUN>/validation_stage4_<FID>.json`:
+- If ACCEPTED: `[PASS] Step 2.4: Stage 4 accepted (attempt N)` — proceed to Phase 3.
+- If REJECTED: Read the `checks` array, collect all entries where `result` == `"FAIL"` (extract `check` name and `reason`). Print `[RETRY] Step 2.4: Stage 4 rejected — <failed checks>`. Loop to next attempt with the failure context prepended.
+
+After 3 failures: `[FAIL] Step 2.4: Stage 4 exhausted (3 attempts)` — skip this finding.
 
 ---
 
