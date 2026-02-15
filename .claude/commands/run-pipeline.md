@@ -9,8 +9,9 @@ Print a status line after each step: `[PASS] Step X.Y: description` or `[FAIL] S
 ## Critical Rules
 
 1. **No edits after writing**: When you Write a response JSON file, it must be correct the first time. NEVER use Edit to fix a response file after writing it. Compute all values before writing.
-2. **No self-correction loops**: If you realize a value is wrong after writing, do NOT go back and fix it. The validators will catch errors — let them reject and move to the next finding.
+2. **No self-correction loops**: If you realize a value is wrong after writing, do NOT go back and fix it. The validators will catch errors — let them reject and you retry.
 3. **Normalize before writing**: All scoring values must be in 0.0–1.0 range. Compute the normalized values, verify the formula, then write once.
+4. **Validator exit codes are NOT errors**: All validator scripts (`validate_impact_report.py`, `validate_integration_plan.py`, `validate_prd_output.py`) exit with code 1 on REJECTED. This is **normal** — it means validation ran successfully but the content didn't pass. Always append `; true` to validator bash commands so exit code 1 doesn't block execution. After running a validator, ALWAYS read the output JSON file to check the result and failed checks. A REJECTED result means **retry**, never skip.
 
 ## Paths
 
@@ -174,11 +175,11 @@ Response format:
 Compute the score BEFORE writing. Do NOT edit the file after writing.
 
 **Run 2** — re-run same command (response file now exists, script validates):
-Same bash command as Run 1 (without the `rm -f` at the start).
+Same bash command as Run 1 but without `rm -f` of response files. Keep the `echo "EXIT:$?"` suffix. **Non-zero exit codes are normal for REJECTED results — always read the validation JSON.**
 
 Read `<RUN>/validation_stage2_<FID>.json`:
 - If ACCEPTED: `[PASS] Step 2.1: Stage 2 accepted (attempt N)` — proceed.
-- If REJECTED: `[RETRY] Step 2.1: Stage 2 rejected — <reason>`. Loop to next attempt.
+- If REJECTED: Read the `reason` field. `[RETRY] Step 2.1: Stage 2 rejected — <reason>`. Loop to next attempt.
 
 After 3 failures: `[FAIL] Step 2.1: Stage 2 exhausted` — skip this finding.
 
@@ -240,7 +241,7 @@ All file paths in `modifications[].files[].path` MUST exist in the builder repo 
 Every engine in `affected_engines` MUST have at least one entry in `modifications`.
 Compute the full response BEFORE writing. Do NOT edit the file after writing.
 
-**Run 2** — re-run same command (without the `rm -f` at the start).
+**Run 2** — re-run same command but without `rm -f` of response files. Keep the `echo "EXIT:$?"` suffix. **Non-zero exit codes are normal for REJECTED results — always read the validation JSON.**
 
 Read `<RUN>/validation_stage3_<FID>.json`:
 - If ACCEPTED: `[PASS] Step 2.3: Stage 3 accepted (attempt N)` — proceed.
@@ -303,7 +304,7 @@ python3 "<SCRIPTS>/extract_prd_metrics.py" --prd "<RUN>/prd_output_<FID>/prd.md"
 ```
 
 ```bash
-python3 "<SCRIPTS>/validate_prd_output.py" --prd-dir "<RUN>/prd_output_<FID>" --integration-plan "<RUN>/integration_plan_<FID>.json" --engine-graph "<CONFIG>/engine_graph.json" --metrics "<RUN>/prd_output_<FID>/metrics.json" --config "<CONFIG>/thresholds.json" --output "<RUN>/validation_stage4_<FID>.json" 2>&1
+python3 "<SCRIPTS>/validate_prd_output.py" --prd-dir "<RUN>/prd_output_<FID>" --integration-plan "<RUN>/integration_plan_<FID>.json" --engine-graph "<CONFIG>/engine_graph.json" --metrics "<RUN>/prd_output_<FID>/metrics.json" --config "<CONFIG>/thresholds.json" --output "<RUN>/validation_stage4_<FID>.json" 2>&1; true
 ```
 
 Read `<RUN>/validation_stage4_<FID>.json`:
