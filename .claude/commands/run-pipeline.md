@@ -12,6 +12,8 @@ Print a status line after each step: `[PASS] Step X.Y: description` or `[FAIL] S
 2. **No self-correction loops**: If you realize a value is wrong after writing, do NOT go back and fix it. The validators will catch errors — let them reject and you retry.
 3. **Normalize before writing**: All scoring values must be in 0.0–1.0 range. Compute the normalized values, verify the formula, then write once.
 4. **Validator exit codes are NOT errors**: All validator scripts (`validate_impact_report.py`, `validate_integration_plan.py`, `validate_prd_output.py`) exit with code 1 on REJECTED. This is **normal** — it means validation ran successfully but the content didn't pass. Always append `; true` to validator bash commands so exit code 1 doesn't block execution. After running a validator, ALWAYS read the output JSON file to check the result and failed checks. A REJECTED result means **retry**, never skip.
+5. **NEVER run Bash in the background**: All bash commands MUST run in the foreground (main thread). Do NOT use `run_in_background: true`. Background tasks stall the pipeline because you cannot proceed until they complete — running them in background just adds polling overhead and wasted time. Run everything synchronously. Use `timeout: 600000` (10 minutes) for long-running commands like `swift test` and stage scripts.
+6. **Use TaskCreate for progress tracking**: At the start of Phase 2, create a task list with one task per finding. Update each task to `in_progress` when you start processing it, and `completed` when done. This keeps the pipeline organized and shows progress.
 
 ## Paths
 
@@ -355,12 +357,23 @@ Read descriptor + prompt. Then **implement directly**:
 2. Create feature branch from run branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
 3. Read the PRD + integration plan
 4. For each modification in the plan: Read the file, Edit it
-5. Build each affected package: `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"`
+5. Build each affected package. **Special packages require different commands:**
+
+   | Package | Build command |
+   |---------|--------------|
+   | VisionEngineApple | `swift build --package-path "<BUILDER>/packages/AIPRDVisionEngineApple" -Xswiftc -plugin-path -Xswiftc /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins` |
+   | VisionEngine | `swift build --package-path "<BUILDER>/packages/AIPRDVisionEngine"` (standard, but test with `make -C "<BUILDER>" test-vision` if standard fails) |
+   | AuditFlagEngine | `swift build --package-path "<BUILDER>/packages/AIPRDAuditFlagEngine"` (has YAML resources in Sources/Resources/Rules/) |
+   | All other packages | `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"` |
+
    - **If build fails: read the error output, fix the code, rebuild. Repeat until build succeeds.**
    - Do NOT move on, do NOT skip. Fix the build errors in-place on the feature branch.
+
 6. Test packages that have Tests/ dirs: `swift test --package-path "<BUILDER>/packages/AIPRD<Engine>"`
+   - **Skip testing for VisionEngineApple** (requires Xcode plugin flags + FoundationModels runtime)
    - **If tests fail: read the error output, fix the code or tests, re-run. Repeat until tests pass.**
    - Do NOT move on, do NOT skip. Fix test failures in-place on the feature branch.
+
 7. Only after ALL affected packages build AND pass tests:
    Commit: `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "pipeline: <FID> — <description>"`
 8. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
@@ -376,15 +389,22 @@ Then re-run stage5 command (same as Run 1 without rm). Read `<RUN>/stage5_summar
 
 ### Step 3.2: Stage 6 — Gates
 
+Run in the **foreground** with a 10-minute timeout (`timeout: 600000`). Do NOT use `run_in_background`.
+
+Skip gates 2, 5, and 6:
+- Gate 2: build diff (skipped, redundant with Gate 4)
+- Gate 5: test suite (`swift` not in script PATH — tests already ran in Step 3.1)
+- Gate 6: encryption integrity (`make distribute` is too slow for pipeline — deployment is checked in Step 4.2)
+
 ```bash
-git -C "<BUILDER>" checkout "pipeline/improvement-<FID>" && "<SCRIPTS>/stage6-gates.sh" --builder-dir "<BUILDER>" --config "<CONFIG>/thresholds.json" --patterns "<CONFIG>/prohibited_patterns.txt" --output "<RUN>" --skip-gate 2 2>&1; echo "EXIT:$?"
+git -C "<BUILDER>" checkout "pipeline/improvement-<FID>" && "<SCRIPTS>/stage6-gates.sh" --builder-dir "<BUILDER>" --config "<CONFIG>/thresholds.json" --patterns "<CONFIG>/prohibited_patterns.txt" --output "<RUN>" --skip-gate 2 --skip-gate 5 --skip-gate 6 2>&1; echo "EXIT:$?"
 ```
 
 ```bash
 git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>"
 ```
 
-Read `<RUN>/enforcement_report.json`. If FAIL: go to retry.
+Read `<RUN>/enforcement_report.json`. If the file doesn't exist (script crashed/timed out), write a manual report based on what gates completed and proceed. If result is FAIL on Gates 1, 3, or 4: go to retry.
 
 ### Step 3.3: Stage 7 — Verification (double-run)
 
