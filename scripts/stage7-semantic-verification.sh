@@ -51,6 +51,9 @@ run_with_timeout() {
     return $exit_code
 }
 
+# Source shared AI invocation helper
+source "$SCRIPT_DIR/ai_invoke.sh"
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -286,21 +289,18 @@ log "INFO" "Prompt assembled ($(wc -l < "$TMP_DIR/prompt.md" | tr -d ' ') lines)
 RAW_OUTPUT="$TMP_DIR/raw_verification.txt"
 CLAUDE_EXIT=0
 
-cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-    env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt.md")" --max-turns 15 \
+cd "$BUILDER_DIR"
+ai_invoke "$TMP_DIR/prompt.md" "$RAW_OUTPUT" "stage7" "$FINDING_ID" \
+    --max-turns 15 \
     || CLAUDE_EXIT=$?
 
-if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-    log "WARN" "Claude CLI failed (exit=$CLAUDE_EXIT), retrying..."
-    CLAUDE_EXIT=0
-    cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-        env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt.md")" --max-turns 15 \
-        || CLAUDE_EXIT=$?
-
-    if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-        log "ERROR" "Claude CLI failed after retry"
-        # Write FAIL result
-        python3 -c "
+if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
+    log "INFO" "Session mode: prompt written, awaiting response"
+    exit 42
+elif [[ "$CLAUDE_EXIT" -ne 0 ]]; then
+    log "ERROR" "AI invocation failed (exit=$CLAUDE_EXIT)"
+    # Write FAIL result
+    python3 -c "
 import json
 from datetime import datetime, timezone
 result = {
@@ -310,7 +310,7 @@ result = {
     'overall_result': 'FAIL',
     'confidence': 0,
     'prd_alignment_score': 0,
-    'findings': [{'severity': 'CRITICAL', 'category': 'alignment', 'description': 'Claude CLI failed — could not perform verification', 'evidence': 'exit code $CLAUDE_EXIT'}],
+    'findings': [{'severity': 'CRITICAL', 'category': 'alignment', 'description': 'AI invocation failed', 'evidence': 'exit code $CLAUDE_EXIT'}],
     'cross_engine_verification': {'touchpoints_verified': 0, 'touchpoints_total': 0, 'result': 'FAIL'},
     'anti_patterns_detected': [],
     'requirements_traced': {'total': 0, 'matched': 0, 'missing': []}
@@ -319,8 +319,7 @@ with open('$OUTPUT_DIR/verification_stage7_${FINDING_ID}.json', 'w') as f:
     json.dump(result, f, indent=2)
     f.write('\n')
 "
-        exit 1
-    fi
+    exit 1
 fi
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,23 @@ log() {
     echo "{\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"stage\":\"$STAGE_NAME\",\"level\":\"$level\",\"message\":\"$msg\"}"
 }
 
+# Stub run_with_timeout for ai_invoke (stage8 uses its own pattern)
+run_with_timeout() {
+    local secs="$1"; local outfile="$2"; shift 2
+    "$@" > "$outfile" 2>/dev/null &
+    local cmd_pid=$!
+    ( sleep "$secs" && kill "$cmd_pid" 2>/dev/null ) &
+    local watcher_pid=$!
+    wait "$cmd_pid" 2>/dev/null
+    local exit_code=$?
+    kill "$watcher_pid" 2>/dev/null
+    wait "$watcher_pid" 2>/dev/null
+    return $exit_code
+}
+
+# Source shared AI invocation helper
+source "$SCRIPT_DIR/ai_invoke.sh"
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -342,21 +359,25 @@ reqs = json.load(open('$input_file')).get('requirements', [])
 print('; '.join(r['description'] for r in reqs))
 ")
 
-        # Invoke Claude Code CLI for PRD generation
+        # Invoke AI for PRD generation
         local prompt="Generate a PRD for: ${title}. ${description}. Context type: ${context}. Requirements: ${requirements}"
 
-        local gen_exit=0
-        local gen_output
-        gen_output=$(unset CLAUDECODE; claude -p "$prompt" --output-format text --max-turns 15 2>&1) || gen_exit=$?
+        # Write prompt to file for ai_invoke
+        local prompt_file="$bench_output_dir/prompt.md"
+        echo "$prompt" > "$prompt_file"
 
-        if [[ $gen_exit -ne 0 ]]; then
+        local gen_exit=0
+        ai_invoke "$prompt_file" "$bench_output_dir/prd.md" "stage8" "$bench_name" \
+            --output-format text --max-turns 15 \
+            || gen_exit=$?
+
+        if [[ $gen_exit -eq 42 ]]; then
+            log "INFO" "Session mode: skipping $bench_name (prompt written, awaiting response)"
+            continue
+        elif [[ $gen_exit -ne 0 ]]; then
             log "WARN" "Generation failed for $bench_name (exit=$gen_exit)"
-            echo "$gen_output" > "$bench_output_dir/generation_error.txt"
             continue
         fi
-
-        # Save the generated output
-        echo "$gen_output" > "$bench_output_dir/prd.md"
 
         # Look for companion files in the output directory
         # (Claude Code may produce them alongside)

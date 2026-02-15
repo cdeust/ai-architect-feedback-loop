@@ -49,6 +49,9 @@ run_with_timeout() {
     return $exit_code
 }
 
+# Source shared AI invocation helper
+source "$SCRIPT_DIR/ai_invoke.sh"
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -359,27 +362,23 @@ with open(output_path, "w") as f:
     f.write(result)
 PYEOF
 
-    # Invoke Claude Code CLI inside builder-dir for SKILL.md access
+    # Invoke AI analysis (builder-dir for SKILL.md access)
     RAW_OUTPUT="$TMP_DIR/raw_${FINDING_ID}.txt"
     CLAUDE_EXIT=0
 
-    cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-        env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 20 \
+    cd "$BUILDER_DIR"
+    ai_invoke "$TMP_DIR/prompt_${FINDING_ID}.md" "$RAW_OUTPUT" "stage4" "$FINDING_ID" \
+        --max-turns 20 \
         || CLAUDE_EXIT=$?
 
-    if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-        log "WARN" "Claude CLI failed for $FINDING_ID (exit=$CLAUDE_EXIT), retrying..."
-        CLAUDE_EXIT=0
-        cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-            env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 20 \
-            || CLAUDE_EXIT=$?
-
-        if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-            log "ERROR" "Retry failed for $FINDING_ID"
-            FAILED_COUNT=$((FAILED_COUNT + 1))
-            add_summary_result "$FINDING_ID" "FAILED" "Claude CLI failed after retry"
-            continue
-        fi
+    if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
+        log "INFO" "Session mode: skipping $FINDING_ID (prompt written, awaiting response)"
+        continue
+    elif [[ "$CLAUDE_EXIT" -ne 0 ]]; then
+        log "ERROR" "AI invocation failed for $FINDING_ID (exit=$CLAUDE_EXIT)"
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        add_summary_result "$FINDING_ID" "FAILED" "AI invocation failed"
+        continue
     fi
 
     # Collect PRD output files from builder dir (Claude writes them there)

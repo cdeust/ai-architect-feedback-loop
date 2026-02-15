@@ -34,7 +34,7 @@ log() {
 }
 
 # ---------------------------------------------------------------------------
-# POSIX-compatible timeout (works on macOS and Linux without coreutils)
+# POSIX-compatible timeout + AI invocation helper
 # Runs: run_with_timeout <seconds> <output_file> <cmd...>
 # Stdout is captured to output_file; stderr is suppressed.
 # ---------------------------------------------------------------------------
@@ -51,6 +51,9 @@ run_with_timeout() {
     wait "$watcher_pid" 2>/dev/null
     return $exit_code
 }
+
+# Source shared AI invocation helper
+source "$SCRIPT_DIR/ai_invoke.sh"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -343,31 +346,24 @@ with open(output_path, "w") as f:
     f.write(result)
 PYEOF
 
-    # Invoke Claude Code CLI
+    # Invoke AI analysis
     RAW_OUTPUT="$TMP_DIR/raw_${PROCESSED}.json"
     CLAUDE_EXIT=0
 
-    run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${PROCESSED}.md")" \
+    ai_invoke "$TMP_DIR/prompt_${PROCESSED}.md" "$RAW_OUTPUT" "stage2" "$FINDING_ID" \
         --output-format json --max-turns 5 \
         || CLAUDE_EXIT=$?
 
-    if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-        log "WARN" "Claude CLI failed/timed out for $FINDING_ID (exit=$CLAUDE_EXIT)"
-
-        # Retry once
-        log "INFO" "Retrying $FINDING_ID..."
-        CLAUDE_EXIT=0
-        run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${PROCESSED}.md")" \
-            --output-format json --max-turns 5 \
-            || CLAUDE_EXIT=$?
-
-        if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-            log "ERROR" "Retry failed for $FINDING_ID (exit=$CLAUDE_EXIT)"
-            FAILED=$((FAILED + 1))
-            add_summary_result "$FINDING_ID" "FAILED" "0" "0" "Claude CLI failed after retry"
-            PROCESSED=$((PROCESSED + 1))
-            continue
-        fi
+    if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
+        log "INFO" "Session mode: skipping $FINDING_ID (prompt written, awaiting response)"
+        PROCESSED=$((PROCESSED + 1))
+        continue
+    elif [[ "$CLAUDE_EXIT" -ne 0 ]]; then
+        log "ERROR" "AI invocation failed for $FINDING_ID (exit=$CLAUDE_EXIT)"
+        FAILED=$((FAILED + 1))
+        add_summary_result "$FINDING_ID" "FAILED" "0" "0" "AI invocation failed"
+        PROCESSED=$((PROCESSED + 1))
+        continue
     fi
 
     # Extract JSON from Claude output

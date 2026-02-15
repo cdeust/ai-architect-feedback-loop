@@ -47,6 +47,9 @@ run_with_timeout() {
     return $exit_code
 }
 
+# Source shared AI invocation helper
+source "$SCRIPT_DIR/ai_invoke.sh"
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -443,29 +446,27 @@ PYEOF
         log "INFO" "Appended failure context from $FAILURE_CONTEXT_FILE"
     fi
 
-    # Invoke Claude Code CLI in builder dir
+    # Invoke AI analysis (builder dir for code modification)
     RAW_OUTPUT="$TMP_DIR/raw_impl_${FINDING_ID}.txt"
     CLAUDE_EXIT=0
 
-    cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-        env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 30 \
+    cd "$BUILDER_DIR"
+    ai_invoke "$TMP_DIR/prompt_${FINDING_ID}.md" "$RAW_OUTPUT" "stage5" "$FINDING_ID" \
+        --max-turns 30 \
         || CLAUDE_EXIT=$?
 
-    if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-        log "WARN" "Claude CLI failed for $FINDING_ID (exit=$CLAUDE_EXIT), retrying..."
-        CLAUDE_EXIT=0
-        cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-            env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 30 \
-            || CLAUDE_EXIT=$?
-
-        if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-            log "ERROR" "Retry failed for $FINDING_ID"
-            git -C "$BUILDER_DIR" checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
-            git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
-            FAILED_COUNT=$((FAILED_COUNT + 1))
-            add_summary_result "$FINDING_ID" "FAILED" "Claude CLI failed after retry"
-            continue
-        fi
+    if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
+        log "INFO" "Session mode: skipping $FINDING_ID (prompt written, awaiting response)"
+        git -C "$BUILDER_DIR" checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
+        git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
+        continue
+    elif [[ "$CLAUDE_EXIT" -ne 0 ]]; then
+        log "ERROR" "AI invocation failed for $FINDING_ID (exit=$CLAUDE_EXIT)"
+        git -C "$BUILDER_DIR" checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
+        git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
+        FAILED_COUNT=$((FAILED_COUNT + 1))
+        add_summary_result "$FINDING_ID" "FAILED" "AI invocation failed"
+        continue
     fi
 
     # Post-implementation checks
