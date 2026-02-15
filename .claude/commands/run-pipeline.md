@@ -335,11 +335,17 @@ Read descriptor + prompt. Then **implement directly**:
 2. Create feature branch from run branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
 3. Read the PRD + integration plan
 4. For each modification in the plan: Read the file, Edit it
-5. Build affected packages: `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"`
-6. Test packages with Tests/ dirs: `swift test --package-path "<BUILDER>/packages/AIPRD<Engine>"`
-7. Fix any failures (iterate until build+tests pass)
-8. Commit: `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "pipeline: <FID> — <description>"`
-9. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
+5. Build each affected package: `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"`
+   - **If build fails: read the error output, fix the code, rebuild. Repeat until build succeeds.**
+   - Do NOT move on, do NOT skip. Fix the build errors in-place on the feature branch.
+6. Test packages that have Tests/ dirs: `swift test --package-path "<BUILDER>/packages/AIPRD<Engine>"`
+   - **If tests fail: read the error output, fix the code or tests, re-run. Repeat until tests pass.**
+   - Do NOT move on, do NOT skip. Fix test failures in-place on the feature branch.
+7. Only after ALL affected packages build AND pass tests:
+   Commit: `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "pipeline: <FID> — <description>"`
+8. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
+
+**CRITICAL: Build and test failures are NOT stage failures — they are implementation bugs you must fix before proceeding. Only move to retry (next attempt) if Run 2 validation rejects, or if Stage 6/7 rejects. Never skip a finding because of a build error.**
 
 **Run 2** — validate:
 Before re-running, ensure builder is on the **run branch** so the script can detect commits on the feature branch:
