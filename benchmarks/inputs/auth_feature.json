@@ -1,0 +1,31 @@
+{
+  "id": "bench-001",
+  "name": "auth_feature",
+  "context": "feature",
+  "title": "Add Multi-Provider Authentication",
+  "description": "Implement OAuth2 (Google, GitHub) and Apple Sign-In with role-based access control. Support session management, token refresh, and secure credential storage following the port/adapter pattern.",
+  "requirements": [
+    { "description": "Support OAuth2 authentication for Google and GitHub providers", "priority": "high", "category": "functional" },
+    { "description": "Integrate Apple Sign-In with ASAuthorizationController", "priority": "high", "category": "functional" },
+    { "description": "Implement role-based access control with admin, editor, and viewer roles", "priority": "high", "category": "functional" },
+    { "description": "Secure token storage using Keychain Services", "priority": "high", "category": "functional" },
+    { "description": "Automatic token refresh before expiry with configurable buffer", "priority": "medium", "category": "functional" },
+    { "description": "Session timeout after 30 minutes of inactivity", "priority": "medium", "category": "functional" },
+    { "description": "Response time under 200ms for authentication flows", "priority": "high", "category": "performance" },
+    { "description": "All auth operations must be auditable with structured logging", "priority": "medium", "category": "security" }
+  ],
+  "constraints": [
+    "Must follow port/adapter pattern per CLAUDE.md",
+    "Zero framework imports in domain layer",
+    "No business logic in SwiftUI views or controllers"
+  ],
+  "platform": "iOS",
+  "expected": {
+    "context_type": "feature",
+    "section_count": 11,
+    "min_fr_count": 8,
+    "min_ac_count": 15,
+    "rag_max_hops": 3,
+    "strategy_tier": 2
+  }
+}

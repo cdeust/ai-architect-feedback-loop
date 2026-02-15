@@ -23,7 +23,7 @@
     "engines_affected_minimum": 2
   },
   "stage_4": {
-    "prd_quality_minimum": 0.80
+    "prd_quality_minimum": 0.85
   },
   "stage_6": {
     "prohibited_patterns_file": "config/prohibited_patterns.txt",

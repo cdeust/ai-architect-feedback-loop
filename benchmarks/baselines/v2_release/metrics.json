@@ -1,0 +1,66 @@
+{
+  "source": {
+    "prd": "benchmarks/baselines/v2_release/prd.md",
+    "verification": "benchmarks/baselines/v2_release/prd-verification.md",
+    "tests": "benchmarks/baselines/v2_release/prd-tests.md"
+  },
+  "extracted_at": "2026-02-15T11:17:57Z",
+  "verification": {
+    "overall_score": 0.91,
+    "section_scores": {
+      "overview": 0.94,
+      "goals_success_metrics": 0.9,
+      "requirements": 0.92,
+      "epic_breakdown": 0.91,
+      "dependencies_sequencing": 0.93,
+      "architecture": 0.89,
+      "risks_open_questions": 0.88
+    },
+    "completeness": {
+      "total_items": 57,
+      "logged": 57,
+      "missing": 0,
+      "coverage": 1.0
+    },
+    "ac_coverage": {
+      "total_acs": 84,
+      "mapped_to_tests": 84,
+      "coverage_pct": 1.0
+    },
+    "strategies_used": [
+      "Plan-and-Solve",
+      "Self-Consistency",
+      "Verified Reasoning",
+      "Tree-of-Thoughts",
+      "Graph-of-Thoughts",
+      "Atomic Decomposition",
+      "Problem Analysis",
+      "Reflexion",
+      "ReAct"
+    ]
+  },
+  "structure": {
+    "section_count": 7,
+    "fr_count": 21,
+    "nfr_count": 8,
+    "ac_count": 0,
+    "story_count": 0,
+    "total_sp": 0,
+    "expected_section_count": 10,
+    "section_completeness": 0.7
+  },
+  "traceability": {
+    "fr_to_ac_coverage": 0.0,
+    "ac_to_test_coverage": 0.0,
+    "cross_ref_integrity": 1.0,
+    "orphan_ids": []
+  },
+  "tests": {
+    "total": 0,
+    "unit": 0,
+    "integration": 0,
+    "e2e": 0,
+    "unique_test_ids": 0,
+    "ac_refs_in_traceability": 0
+  }
+}

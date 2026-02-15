@@ -1,0 +1,11 @@
+Baselines established: 2026-02-15T11:17:08Z
+Source: dogfood/pipeline-feedback/ (product-generated outputs)
+Method: Mapped benchmark inputs to representative dogfood PRDs
+
+Mapping:
+  auth_feature -> Epic1-DeterministicFoundation
+  crash_regression_bug -> Epic2-IntelligenceLayer
+  v2_release -> PRD-PipelineFeedback (full scope)
+  ai_chat_mvp -> Epic3-DogfoodImplementation
+  gdpr_compliance_incident -> Epic4-VerificationDelivery
+  ci_pipeline_cicd -> Epic5-OperationalMaturity

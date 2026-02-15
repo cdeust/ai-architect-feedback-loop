@@ -1,0 +1,29 @@
+{
+  "id": "bench-002",
+  "name": "crash_regression_bug",
+  "context": "bug",
+  "title": "Fix Crash on PDF Export with Large Documents",
+  "description": "Users report a crash when exporting documents larger than 50MB to PDF. The crash occurs in the rendering pipeline during page composition. Stack trace points to memory pressure in the image scaling subsystem. Regression introduced in v2.3.1 after the image optimization refactor.",
+  "requirements": [
+    { "description": "Identify root cause of crash in PDF rendering pipeline for documents over 50MB", "priority": "high", "category": "functional" },
+    { "description": "Fix memory allocation pattern in image scaling to use streaming instead of full-buffer", "priority": "high", "category": "functional" },
+    { "description": "Add regression test with 100MB test document", "priority": "high", "category": "functional" },
+    { "description": "Peak memory usage during export must not exceed 256MB regardless of document size", "priority": "high", "category": "performance" },
+    { "description": "Export time for 50MB document must remain under 30 seconds", "priority": "medium", "category": "performance" },
+    { "description": "Add memory pressure monitoring with graceful degradation", "priority": "medium", "category": "functional" }
+  ],
+  "constraints": [
+    "Must not break existing PDF export for documents under 50MB",
+    "No new third-party dependencies for image processing",
+    "Fix must be backward-compatible with existing saved documents"
+  ],
+  "platform": "iOS",
+  "expected": {
+    "context_type": "bug",
+    "section_count": 6,
+    "min_fr_count": 4,
+    "min_ac_count": 8,
+    "rag_max_hops": 3,
+    "strategy_tier": 1
+  }
+}

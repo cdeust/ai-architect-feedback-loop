@@ -1,0 +1,33 @@
+{
+  "id": "bench-003",
+  "name": "v2_release",
+  "context": "release",
+  "title": "v2.0 Major Release with Breaking API Changes",
+  "description": "Major version release introducing a new plugin architecture, migrating from UIKit to SwiftUI for all screens, deprecating 12 public APIs, and adding support for iPadOS multitasking. Includes data migration from CoreData to SwiftData, production readiness checklist, and rollback plan.",
+  "requirements": [
+    { "description": "Migrate all 8 screens from UIKit to SwiftUI with feature parity", "priority": "high", "category": "functional" },
+    { "description": "Implement plugin architecture with dynamic loading and sandboxing", "priority": "high", "category": "functional" },
+    { "description": "CoreData to SwiftData migration with zero data loss", "priority": "high", "category": "functional" },
+    { "description": "Deprecate 12 public APIs with migration guide and compiler warnings", "priority": "high", "category": "functional" },
+    { "description": "iPadOS Split View and Slide Over support", "priority": "medium", "category": "functional" },
+    { "description": "Production readiness checklist covering monitoring, alerting, and rollback", "priority": "high", "category": "functional" },
+    { "description": "App launch time must not regress beyond 10% from v1.x baseline", "priority": "high", "category": "performance" },
+    { "description": "Automated rollback mechanism if crash rate exceeds 1% in first 24 hours", "priority": "high", "category": "functional" },
+    { "description": "Beta testing phase of minimum 2 weeks with 500+ users", "priority": "medium", "category": "functional" },
+    { "description": "Documentation update for all changed public APIs", "priority": "medium", "category": "functional" }
+  ],
+  "constraints": [
+    "Must support iOS 16+ only (dropping iOS 15)",
+    "Migration must be reversible for 30 days post-release",
+    "No feature flags in production release build"
+  ],
+  "platform": "iOS",
+  "expected": {
+    "context_type": "release",
+    "section_count": 10,
+    "min_fr_count": 10,
+    "min_ac_count": 20,
+    "rag_max_hops": 3,
+    "strategy_tier": 2
+  }
+}

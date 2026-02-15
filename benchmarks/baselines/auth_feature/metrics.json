@@ -1,0 +1,65 @@
+{
+  "source": {
+    "prd": "benchmarks/baselines/auth_feature/prd.md",
+    "verification": "benchmarks/baselines/auth_feature/prd-verification.md",
+    "tests": "benchmarks/baselines/auth_feature/prd-tests.md"
+  },
+  "extracted_at": "2026-02-15T11:17:57Z",
+  "verification": {
+    "overall_score": 0.93,
+    "section_scores": {
+      "overview": 0.95,
+      "goals_success_metrics": 0.92,
+      "requirements": 0.94,
+      "user_stories_acceptance_criteria": 0.93,
+      "technical_specification": 0.94,
+      "implementation_roadmap": 0.91
+    },
+    "completeness": {
+      "total_items": 88,
+      "logged": 88,
+      "missing": 0,
+      "coverage": 1.0
+    },
+    "ac_coverage": {
+      "total_acs": 35,
+      "mapped_to_tests": 35,
+      "coverage_pct": 1.0
+    },
+    "strategies_used": [
+      "Plan-and-Solve",
+      "Self-Consistency",
+      "Verified Reasoning",
+      "Tree-of-Thoughts",
+      "Graph-of-Thoughts",
+      "Atomic Decomposition",
+      "ReAct",
+      "Reflexion",
+      "KS Adaptive Consensus"
+    ]
+  },
+  "structure": {
+    "section_count": 8,
+    "fr_count": 32,
+    "nfr_count": 8,
+    "ac_count": 35,
+    "story_count": 10,
+    "total_sp": 135,
+    "expected_section_count": 11,
+    "section_completeness": 0.7272727272727273
+  },
+  "traceability": {
+    "fr_to_ac_coverage": 1.0,
+    "ac_to_test_coverage": 1.0,
+    "cross_ref_integrity": 1.0,
+    "orphan_ids": []
+  },
+  "tests": {
+    "total": 52,
+    "unit": 28,
+    "integration": 18,
+    "e2e": 6,
+    "unique_test_ids": 56,
+    "ac_refs_in_traceability": 35
+  }
+}

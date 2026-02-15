@@ -1,0 +1,48 @@
+{
+  "source": {
+    "prd": "benchmarks/baselines/ai_chat_mvp/prd.md",
+    "verification": "benchmarks/baselines/ai_chat_mvp/prd-verification.md",
+    "tests": "benchmarks/baselines/ai_chat_mvp/prd-tests.md"
+  },
+  "extracted_at": "2026-02-15T11:17:57Z",
+  "verification": {
+    "overall_score": 0.91,
+    "section_scores": {},
+    "completeness": {
+      "total_items": 43,
+      "logged": 43,
+      "missing": 0,
+      "coverage": 1.0
+    },
+    "ac_coverage": {
+      "total_acs": 16,
+      "mapped_to_tests": 16,
+      "coverage_pct": 1.0
+    },
+    "strategies_used": []
+  },
+  "structure": {
+    "section_count": 7,
+    "fr_count": 16,
+    "nfr_count": 4,
+    "ac_count": 16,
+    "story_count": 4,
+    "total_sp": 68,
+    "expected_section_count": 8,
+    "section_completeness": 0.875
+  },
+  "traceability": {
+    "fr_to_ac_coverage": 1.0,
+    "ac_to_test_coverage": 1.0,
+    "cross_ref_integrity": 1.0,
+    "orphan_ids": []
+  },
+  "tests": {
+    "total": 28,
+    "unit": 0,
+    "integration": 0,
+    "e2e": 0,
+    "unique_test_ids": 0,
+    "ac_refs_in_traceability": 16
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "description": "Maps TV finding relevance_category to product engine roles and primary engines",
+  "mappings": {
+    "retrieval": {
+      "primary_engines": ["RAGEngine"],
+      "related_ports": ["EmbeddingGeneratorPort", "VectorSearchPort", "FullTextSearchPort", "ChunkerPort", "ChunkEnricherPort"],
+      "key_services": ["EnrichedContextBuilder.gatherCodebaseContext()"]
+    },
+    "prompting": {
+      "primary_engines": ["MetaPromptingEngine"],
+      "related_ports": ["ThinkingPort", "FewShotPromptPort"],
+      "key_services": ["ThinkingOrchestratorUseCase", "SectionStrategySelector"]
+    },
+    "verification": {
+      "primary_engines": ["VerificationEngine"],
+      "related_ports": ["VerificationEvidenceRepositoryPort"],
+      "key_services": ["SectionVerification", "HardOutputRuleEnforcer"]
+    },
+    "inference": {
+      "primary_engines": ["StrategyEngine", "OrchestrationEngine"],
+      "related_ports": ["AIProviderPort", "StructuredOutputProviderPort", "PromptCachingProviderPort"],
+      "key_services": ["SectionContentGenerator", "GeneratePRDUseCase"]
+    },
+    "embeddings": {
+      "primary_engines": ["RAGEngine"],
+      "related_ports": ["EmbeddingGeneratorPort", "EmbeddingStoragePort"],
+      "key_services": ["EnrichedContextBuilder.gatherCodebaseContext()"]
+    },
+    "benchmarks": {
+      "primary_engines": ["VerificationEngine", "StrategyEngine"],
+      "related_ports": ["PerformanceMetricsTrackerPort", "LLMInteractionTrackerPort"],
+      "key_services": ["IntelligenceTrackerService", "BusinessKPIsFactory"]
+    },
+    "cost_optimization": {
+      "primary_engines": ["OrchestrationEngine"],
+      "related_ports": ["TokenizerPort", "ContextCompressorPort"],
+      "key_services": ["SectionTokenBudgetAllocator", "ContextBudgetAllocator", "PromptTokenVerifier"]
+    },
+    "security_change": {
+      "primary_engines": ["EncryptionEngine"],
+      "related_ports": ["HashingPort", "LicenseValidationPort"],
+      "key_services": ["SecureLicenseValidator", "TrialLicenseManager"]
+    },
+    "api_change": {
+      "primary_engines": ["SharedUtilities"],
+      "related_ports": ["AIProviderPort", "GitHubAPIPort"],
+      "key_services": ["All consumers of changed port"]
+    },
+    "dependency_change": {
+      "primary_engines": ["SharedUtilities"],
+      "related_ports": [],
+      "key_services": ["All engines — check Package.swift dependency changes"]
+    }
+  }
+}

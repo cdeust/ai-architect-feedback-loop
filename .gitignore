@@ -4,3 +4,6 @@ config/engine_graph.json
 .build/
 *.log
 .DS_Store
+baselines_archive/
+__pycache__/
+*.pyc

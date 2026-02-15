@@ -1,0 +1,33 @@
+{
+  "id": "bench-006",
+  "name": "ci_pipeline_cicd",
+  "context": "cicd",
+  "title": "Automated CI/CD Pipeline with Multi-Environment Deployment",
+  "description": "Design and implement a CI/CD pipeline using GitHub Actions that supports automated building, testing, code signing, and deployment to TestFlight and App Store Connect. Pipeline must handle multiple environments (dev, staging, production), manage certificates and provisioning profiles, and provide deployment status notifications.",
+  "requirements": [
+    { "description": "GitHub Actions workflow for PR validation (build + test + lint)", "priority": "high", "category": "functional" },
+    { "description": "Automated code signing with match for development and distribution certificates", "priority": "high", "category": "functional" },
+    { "description": "TestFlight deployment on merge to develop branch", "priority": "high", "category": "functional" },
+    { "description": "App Store Connect submission on tagged releases", "priority": "high", "category": "functional" },
+    { "description": "Environment-specific configuration injection (API URLs, feature flags)", "priority": "high", "category": "functional" },
+    { "description": "Build caching for Swift Package Manager dependencies", "priority": "medium", "category": "functional" },
+    { "description": "Slack notification on build success/failure with artifact links", "priority": "medium", "category": "functional" },
+    { "description": "Full pipeline execution time under 20 minutes for PR validation", "priority": "high", "category": "performance" },
+    { "description": "Secrets management using GitHub encrypted secrets with rotation schedule", "priority": "high", "category": "security" }
+  ],
+  "constraints": [
+    "Must use GitHub Actions (no third-party CI services)",
+    "Self-hosted runners for macOS builds",
+    "No plaintext secrets in workflow files",
+    "Must support concurrent pipeline runs without conflicts"
+  ],
+  "platform": "iOS",
+  "expected": {
+    "context_type": "cicd",
+    "section_count": 9,
+    "min_fr_count": 7,
+    "min_ac_count": 14,
+    "rag_max_hops": 3,
+    "strategy_tier": 2
+  }
+}

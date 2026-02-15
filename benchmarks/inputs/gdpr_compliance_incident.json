@@ -1,0 +1,34 @@
+{
+  "id": "bench-005",
+  "name": "gdpr_compliance_incident",
+  "context": "incident",
+  "title": "GDPR Data Breach - Unauthorized PII Exposure in Analytics Logs",
+  "description": "Security audit discovered that user PII (email addresses, IP addresses, device identifiers) is being logged in plaintext to the analytics pipeline. Affected users: approximately 15,000 EU users over the past 90 days. Requires immediate containment, forensic analysis, GDPR Article 33 notification within 72 hours, and systematic remediation of all logging paths.",
+  "requirements": [
+    { "description": "Identify all code paths that log PII to analytics pipeline", "priority": "high", "category": "functional" },
+    { "description": "Implement PII scrubbing filter for all log output channels", "priority": "high", "category": "functional" },
+    { "description": "Purge affected PII data from analytics storage within 48 hours", "priority": "high", "category": "functional" },
+    { "description": "Generate GDPR Article 33 breach notification report", "priority": "high", "category": "functional" },
+    { "description": "Implement automated PII detection scanner for CI pipeline", "priority": "high", "category": "functional" },
+    { "description": "Add data classification labels to all model properties", "priority": "medium", "category": "functional" },
+    { "description": "Create user notification template for GDPR Article 34 communication", "priority": "high", "category": "functional" },
+    { "description": "Implement audit trail for all PII access with retention policy", "priority": "medium", "category": "functional" },
+    { "description": "PII scrubbing must add no more than 5ms latency per log entry", "priority": "medium", "category": "performance" },
+    { "description": "All remediation must be completed within 30 days of discovery", "priority": "high", "category": "functional" }
+  ],
+  "constraints": [
+    "Must comply with GDPR Articles 33 and 34 notification timelines",
+    "No PII may be retained in any non-encrypted storage",
+    "Remediation must not disrupt production service availability",
+    "All changes require security team sign-off"
+  ],
+  "platform": "iOS",
+  "expected": {
+    "context_type": "incident",
+    "section_count": 8,
+    "min_fr_count": 8,
+    "min_ac_count": 12,
+    "rag_max_hops": 4,
+    "strategy_tier": 2
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "bench-004",
+  "name": "ai_chat_mvp",
+  "context": "mvp",
+  "title": "AI Chat Assistant MVP",
+  "description": "Build a minimal viable AI chat assistant that allows users to have conversations with Claude. Core value: natural language interaction with context retention across a session. Tight scope focused on shipping the core loop within 2 weeks.",
+  "requirements": [
+    { "description": "Single-turn and multi-turn conversation with Claude API", "priority": "high", "category": "functional" },
+    { "description": "Message history display with user and assistant message bubbles", "priority": "high", "category": "functional" },
+    { "description": "Streaming response display with typing indicator", "priority": "high", "category": "functional" },
+    { "description": "Copy message content to clipboard", "priority": "medium", "category": "functional" },
+    { "description": "Error handling for network failures with retry option", "priority": "high", "category": "functional" },
+    { "description": "First response token must appear within 500ms of send", "priority": "high", "category": "performance" },
+    { "description": "Support conversation context up to 100k tokens", "priority": "medium", "category": "functional" }
+  ],
+  "constraints": [
+    "MVP scope only - no persistence, no accounts, no sharing",
+    "Must ship within 2 weeks",
+    "Use Anthropic Swift SDK directly"
+  ],
+  "platform": "iOS",
+  "expected": {
+    "context_type": "mvp",
+    "section_count": 8,
+    "min_fr_count": 5,
+    "min_ac_count": 10,
+    "rag_max_hops": 2,
+    "strategy_tier": 1
+  }
+}

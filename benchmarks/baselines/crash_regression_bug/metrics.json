@@ -1,0 +1,57 @@
+{
+  "source": {
+    "prd": "benchmarks/baselines/crash_regression_bug/prd.md",
+    "verification": "benchmarks/baselines/crash_regression_bug/prd-verification.md",
+    "tests": "benchmarks/baselines/crash_regression_bug/prd-tests.md"
+  },
+  "extracted_at": "2026-02-15T11:17:57Z",
+  "verification": {
+    "overall_score": 0.9,
+    "section_scores": {},
+    "completeness": {
+      "total_items": 70,
+      "logged": 70,
+      "missing": 0,
+      "coverage": 1.0
+    },
+    "ac_coverage": {
+      "total_acs": 27,
+      "mapped_to_tests": 27,
+      "coverage_pct": 1.0
+    },
+    "strategies_used": [
+      "Plan-and-Solve",
+      "Verified Reasoning",
+      "Tree-of-Thoughts",
+      "Graph-of-Thoughts",
+      "Atomic Decomposition",
+      "ReAct",
+      "Reflexion",
+      "KS Adaptive Consensus"
+    ]
+  },
+  "structure": {
+    "section_count": 8,
+    "fr_count": 21,
+    "nfr_count": 6,
+    "ac_count": 27,
+    "story_count": 9,
+    "total_sp": 112,
+    "expected_section_count": 6,
+    "section_completeness": 1.0
+  },
+  "traceability": {
+    "fr_to_ac_coverage": 1.0,
+    "ac_to_test_coverage": 1.0,
+    "cross_ref_integrity": 1.0,
+    "orphan_ids": []
+  },
+  "tests": {
+    "total": 42,
+    "unit": 22,
+    "integration": 14,
+    "e2e": 6,
+    "unique_test_ids": 0,
+    "ac_refs_in_traceability": 27
+  }
+}
