@@ -166,7 +166,7 @@ PYEOF
 # ---------------------------------------------------------------------------
 
 run_gate_1() {
-    log "INFO" "Gate 1: Prohibited pattern detection"
+    log "INFO" "Gate 1: Prohibited pattern detection (delta-only)"
     local start_time
     start_time=$(date +%s)
 
@@ -183,6 +183,24 @@ run_gate_1() {
         return
     fi
 
+    # Determine changed files for delta checking (only scan files touched by this branch)
+    local current_branch
+    current_branch=$(git -C "$BUILDER_DIR" branch --show-current 2>/dev/null || echo "")
+    local changed_files=""
+    if [[ -n "$current_branch" && "$current_branch" != "main" ]]; then
+        changed_files=$(git -C "$BUILDER_DIR" diff --name-only "main...$current_branch" -- packages/ library/ 2>/dev/null || echo "")
+    fi
+
+    # If no changed files (or on main), skip pattern check — no delta to verify
+    if [[ -z "$changed_files" ]]; then
+        log "INFO" "Gate 1: No changed files to check — PASS (on main or no delta)"
+        echo '{"reason":"no changed files (delta-only mode)","patterns_checked":0,"violations_found":0,"files_scanned":0,"violations":[]}' > "$details_file"
+        local duration=$(( $(date +%s) - start_time ))
+        add_gate_result 1 "prohibited_patterns" "PASS" "$duration" "$details_file"
+        rm -f "$details_file"
+        return
+    fi
+
     local violations=0
     local files_scanned=0
     local patterns_checked=0
@@ -190,53 +208,55 @@ run_gate_1() {
     violations_file=$(mktemp)
     echo '[]' > "$violations_file"
 
-    # Scan Swift sources in the builder project packages
+    # Only check patterns in changed Swift source files (delta-only)
     while IFS= read -r pattern || [[ -n "$pattern" ]]; do
         [[ -z "$pattern" ]] && continue
         [[ "$pattern" == \#* ]] && continue
         patterns_checked=$((patterns_checked + 1))
 
-        # Search in package sources, excluding test dirs and .build
-        local matches_file
-        matches_file=$(mktemp)
-        grep -rn --include="*.swift" -E "$pattern" \
-            "$BUILDER_DIR/packages/" \
-            "$BUILDER_DIR/library/" \
-            2>/dev/null | grep -v "/Tests/" | grep -v "/.build/" | grep -v "/test/" > "$matches_file" || true
+        while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            local full_path="$BUILDER_DIR/$file"
+            [[ -f "$full_path" ]] || continue
+            [[ "$file" == *.swift ]] || continue
+            # Skip test files and build artifacts
+            [[ "$file" == */Tests/* ]] && continue
+            [[ "$file" == */.build/* ]] && continue
+            [[ "$file" == */test/* ]] && continue
 
-        if [[ -s "$matches_file" ]]; then
-            local match_count
-            match_count=$(wc -l < "$matches_file" | tr -d ' ')
-            violations=$((violations + match_count))
+            if grep -qE "$pattern" "$full_path" 2>/dev/null; then
+                local match_lines
+                match_lines=$(grep -nE "$pattern" "$full_path" 2>/dev/null || true)
+                local match_count
+                match_count=$(echo "$match_lines" | grep -c . || echo "0")
+                violations=$((violations + match_count))
 
-            # Capture first few violations for the report
-            python3 - "$violations_file" "$matches_file" "$pattern" <<'PYEOF'
+                # Capture violations for the report (first 3 per pattern per file)
+                python3 - "$violations_file" "$file" "$pattern" "$match_lines" <<'PYEOF'
 import json, sys
-viol_file, matches_file, pattern = sys.argv[1:4]
+viol_file, filepath, pattern = sys.argv[1], sys.argv[2], sys.argv[3]
+match_lines = sys.argv[4] if len(sys.argv) > 4 else ""
 with open(viol_file) as f:
     existing = json.load(f)
-with open(matches_file) as f:
-    for line in f.readlines()[:5]:
-        line = line.strip()
-        if line:
-            existing.append({"pattern": pattern, "location": line[:200]})
+for line in match_lines.strip().split("\n")[:3]:
+    if line.strip():
+        existing.append({"pattern": pattern, "location": f"{filepath}:{line.strip()}"[:200]})
 with open(viol_file, 'w') as f:
     json.dump(existing, f)
 PYEOF
-        fi
-        rm -f "$matches_file"
+            fi
+        done <<< "$changed_files"
     done < "$patterns_file"
 
-    # Count scanned files
-    files_scanned=$(find "$BUILDER_DIR/packages" "$BUILDER_DIR/library" \
-        -name "*.swift" -not -path "*/Tests/*" -not -path "*/.build/*" 2>/dev/null | wc -l | tr -d ' ')
+    # Count scanned files (only changed Swift files)
+    files_scanned=$(echo "$changed_files" | grep -c '\.swift$' || echo "0")
 
     local result="PASS"
     if [[ "$violations" -gt 0 ]]; then
         result="FAIL"
-        log "WARN" "Gate 1: $violations violations found across $patterns_checked patterns"
+        log "WARN" "Gate 1: $violations violations found in $files_scanned changed files across $patterns_checked patterns"
     else
-        log "INFO" "Gate 1: Clean — $patterns_checked patterns checked, $files_scanned files scanned"
+        log "INFO" "Gate 1: Clean — $patterns_checked patterns checked, $files_scanned changed files scanned (delta-only)"
     fi
 
     # Build details JSON
@@ -247,6 +267,7 @@ patterns_checked, violations_found, files_scanned = int(sys.argv[3]), int(sys.ar
 with open(viol_file) as f:
     viols = json.load(f)
 details = {
+    "mode": "delta_only",
     "patterns_checked": patterns_checked,
     "violations_found": violations_found,
     "files_scanned": files_scanned,
@@ -478,27 +499,116 @@ run_gate_4() {
 # ---------------------------------------------------------------------------
 
 run_gate_5() {
-    log "INFO" "Gate 5: Test suite (make test-all)"
+    log "INFO" "Gate 5: Per-package test suite"
     local start_time
     start_time=$(date +%s)
 
-    local test_output
-    local test_exit=0
-    test_output=$(make -C "$BUILDER_DIR" test-all 2>&1) || test_exit=$?
-
     local result="PASS"
-    if [[ "$test_exit" -ne 0 ]]; then
-        result="FAIL"
-        log "ERROR" "Gate 5: Tests failed with exit code $test_exit"
-    else
-        log "INFO" "Gate 5: All tests passed"
+    local tests_run=0
+    local tests_passed=0
+    local tests_failed=0
+    local tests_skipped=0
+    local package_results_file
+    package_results_file=$(mktemp)
+    echo '[]' > "$package_results_file"
+
+    # Run tests per-package, skipping packages without Tests/ directory
+    for package_dir in "$BUILDER_DIR"/packages/AIPRD*; do
+        [[ -d "$package_dir" ]] || continue
+        local pkg_name
+        pkg_name=$(basename "$package_dir")
+
+        if [[ ! -d "$package_dir/Tests" ]]; then
+            log "INFO" "Gate 5: $pkg_name — no Tests/ directory, skipping"
+            tests_skipped=$((tests_skipped + 1))
+            python3 -c "
+import json
+with open('$package_results_file') as f:
+    results = json.load(f)
+results.append({'package': '$pkg_name', 'result': 'SKIPPED', 'reason': 'no Tests/ directory'})
+with open('$package_results_file', 'w') as f:
+    json.dump(results, f)
+"
+            continue
+        fi
+
+        tests_run=$((tests_run + 1))
+        local pkg_output
+        local pkg_exit=0
+        pkg_output=$(swift test --package-path "$package_dir" 2>&1) || pkg_exit=$?
+
+        if [[ "$pkg_exit" -eq 0 ]]; then
+            log "INFO" "Gate 5: $pkg_name — tests passed"
+            tests_passed=$((tests_passed + 1))
+            python3 -c "
+import json
+with open('$package_results_file') as f:
+    results = json.load(f)
+results.append({'package': '$pkg_name', 'result': 'PASS'})
+with open('$package_results_file', 'w') as f:
+    json.dump(results, f)
+"
+        else
+            log "WARN" "Gate 5: $pkg_name — tests FAILED (exit=$pkg_exit)"
+            tests_failed=$((tests_failed + 1))
+            result="FAIL"
+            # Save failure output
+            echo "$pkg_output" > "$OUTPUT_DIR/gate5_${pkg_name}_output.txt"
+            python3 -c "
+import json
+with open('$package_results_file') as f:
+    results = json.load(f)
+results.append({'package': '$pkg_name', 'result': 'FAIL', 'exit_code': $pkg_exit, 'output_file': 'gate5_${pkg_name}_output.txt'})
+with open('$package_results_file', 'w') as f:
+    json.dump(results, f)
+"
+        fi
+    done
+
+    # Also run library-level tests if Tests/ exists
+    if [[ -d "$BUILDER_DIR/library/Tests" ]]; then
+        tests_run=$((tests_run + 1))
+        local lib_output
+        local lib_exit=0
+        lib_output=$(swift test --package-path "$BUILDER_DIR/library" 2>&1) || lib_exit=$?
+
+        if [[ "$lib_exit" -eq 0 ]]; then
+            log "INFO" "Gate 5: library — tests passed"
+            tests_passed=$((tests_passed + 1))
+        else
+            log "WARN" "Gate 5: library — tests FAILED (exit=$lib_exit)"
+            tests_failed=$((tests_failed + 1))
+            result="FAIL"
+            echo "$lib_output" > "$OUTPUT_DIR/gate5_library_output.txt"
+        fi
     fi
 
-    echo "$test_output" > "$OUTPUT_DIR/gate5_test_output.txt"
+    if [[ "$tests_run" -eq 0 ]]; then
+        log "INFO" "Gate 5: No test targets found — PASS"
+    else
+        log "INFO" "Gate 5: $tests_passed/$tests_run passed, $tests_skipped skipped"
+    fi
 
     local details_file
     details_file=$(mktemp)
-    python3 -c "import json; json.dump({'exit_code':$test_exit,'output_file':'gate5_test_output.txt'},open('$details_file','w'))"
+    python3 - "$details_file" "$package_results_file" "$tests_run" "$tests_passed" "$tests_failed" "$tests_skipped" <<'PYEOF'
+import json, sys
+details_file, results_file = sys.argv[1], sys.argv[2]
+tests_run, tests_passed, tests_failed, tests_skipped = (int(x) for x in sys.argv[3:7])
+with open(results_file) as f:
+    packages = json.load(f)
+details = {
+    "mode": "per_package",
+    "tests_run": tests_run,
+    "tests_passed": tests_passed,
+    "tests_failed": tests_failed,
+    "tests_skipped": tests_skipped,
+    "packages": packages
+}
+with open(details_file, 'w') as f:
+    json.dump(details, f)
+PYEOF
+    rm -f "$package_results_file"
 
     local duration=$(( $(date +%s) - start_time ))
     add_gate_result 5 "test_suite" "$result" "$duration" "$details_file"

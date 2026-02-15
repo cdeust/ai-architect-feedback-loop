@@ -4,27 +4,39 @@
 # ============================================================================
 #
 # Provides `ai_invoke` function that replaces direct `claude -p` calls.
-# Supports two modes:
+# Supports three modes:
 #
-#   1. CLI mode (default, for nightly unattended runs):
-#      Calls `claude -p` via run_with_timeout.
+#   1. Auto mode (PIPELINE_AUTO_MODE=1):
+#      Writes the prompt and a structured `pending_stage.json` descriptor
+#      to OUTPUT_DIR for the orchestrating Claude Code session to process.
+#      The session reads the prompt, produces a response, writes it to the
+#      expected path, then re-runs the stage script to validate.
 #
 #   2. Session mode (PIPELINE_SESSION_MODE=1):
 #      Writes the prompt to the output dir for the current Claude Code
 #      session to process. Reads the response from a well-known path.
 #      The orchestrating session provides responses before the script runs.
 #
+#   3. CLI mode (default, for nightly unattended runs):
+#      Calls `claude -p` via run_with_timeout.
+#
 # Usage:
 #   source scripts/ai_invoke.sh
 #   ai_invoke <prompt_file> <output_file> <stage> <finding_id> [claude_args...]
+#
+# Auto mode file convention:
+#   Prompt written to:   $OUTPUT_DIR/prompt_<stage>_<finding_id>.md
+#   Descriptor written:  $OUTPUT_DIR/pending_stage.json
+#   Response read from:  $OUTPUT_DIR/response_<stage>_<finding_id>.json
 #
 # Session mode file convention:
 #   Prompt written to:   $OUTPUT_DIR/prompt_<stage>_<finding_id>.md
 #   Response read from:  $OUTPUT_DIR/response_<stage>_<finding_id>.json
 #
 # Environment:
+#   PIPELINE_AUTO_MODE=1     — enable auto mode (structured descriptor)
 #   PIPELINE_SESSION_MODE=1  — enable session mode (skip claude -p)
-#   AI_TIMEOUT              — timeout in seconds (default: 300)
+#   AI_TIMEOUT               — timeout in seconds (default: 300)
 # ============================================================================
 
 # Requires run_with_timeout and log to be defined by the sourcing script.
@@ -39,7 +51,40 @@ ai_invoke() {
 
     local timeout="${AI_TIMEOUT:-${TIMEOUT:-300}}"
 
-    if [[ "${PIPELINE_SESSION_MODE:-}" == "1" ]]; then
+    if [[ "${PIPELINE_AUTO_MODE:-}" == "1" ]]; then
+        # --- Auto mode (orchestrated by Claude Code session) ---
+        local prompt_dest="$OUTPUT_DIR/prompt_${stage}_${finding_id}.md"
+        cp "$prompt_file" "$prompt_dest"
+
+        # Check if response was already placed by the orchestrator
+        local response_file="$OUTPUT_DIR/response_${stage}_${finding_id}.json"
+        if [[ ! -f "$response_file" ]]; then
+            response_file="$OUTPUT_DIR/response_${stage}_${finding_id}.txt"
+        fi
+
+        if [[ -f "$response_file" ]]; then
+            cp "$response_file" "$output_file"
+            log "INFO" "Auto mode: response found for $stage/$finding_id"
+            return 0
+        fi
+
+        # Write descriptor for the orchestrating Claude session
+        python3 -c "
+import json
+desc = {
+    'stage': '$stage',
+    'finding_id': '$finding_id',
+    'prompt_file': '$prompt_dest',
+    'expected_response': '$OUTPUT_DIR/response_${stage}_${finding_id}.json',
+    'output_file': '$output_file'
+}
+with open('$OUTPUT_DIR/pending_stage.json', 'w') as f:
+    json.dump(desc, f, indent=2)
+"
+        log "INFO" "Auto mode: prompt written, pending_stage.json created for $stage/$finding_id"
+        return 42  # Special exit code: needs AI response
+
+    elif [[ "${PIPELINE_SESSION_MODE:-}" == "1" ]]; then
         # --- Session mode ---
         # Write prompt to output dir for the orchestrating session
         local prompt_dest="$OUTPUT_DIR/prompt_${stage}_${finding_id}.md"
