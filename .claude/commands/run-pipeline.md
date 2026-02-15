@@ -273,18 +273,33 @@ Remove previous PRD output if retrying:
 rm -rf "<RUN>/prd_output_<FID>" && rm -f "<BUILDER>/prd.md" "<BUILDER>/prd-verification.md" "<BUILDER>/prd-jira.md" "<BUILDER>/prd-tests.md"
 ```
 
-**BEFORE calling the skill**, remember these overrides. When the skill's SKILL.md loads, it will instruct you to do things. You MUST override them:
+**BEFORE calling the skill**, determine the scope from the pipeline artifacts:
+
+**Scope derivation** (from Stage 2 impact report + Stage 3 integration plan for this finding):
+- Count total files across all `modifications[].files[]` in the integration plan
+- Count `affected_engines` from the impact report
+- Read the finding description for architectural significance
+
+| Engines | Files | Architectural change? | Scope |
+|---------|-------|-----------------------|-------|
+| 1–2 | ≤ 3 | No | simple |
+| 2–4 | 4–10 | No | moderate |
+| 4+ | 10+ | OR introduces new strategy/pattern/replaces existing approach | complex |
+
+Record the derived scope as `FINDING_SCOPE` for this finding.
+
+**Now remember these overrides.** When the skill's SKILL.md loads, it will instruct you to do things. You MUST override them:
 
 | SKILL.md says | YOU DO INSTEAD |
 |---|---|
 | Validate/activate license | **SKIP ENTIRELY**. License confirmed in Step 0.1. Do NOT call `validate_license`, `activate_license`, or `get_license_features` MCP tools. Do NOT read license files. |
-| Rule 0 feasibility gate (AskUserQuestion) | **SKIP**. Scope is "moderate". Proceed. |
+| Rule 0 feasibility gate (AskUserQuestion) | **SKIP the question**. Use `FINDING_SCOPE` (derived above). If "complex", the skill may select a more thorough generation strategy — that's fine, just don't ask the user. |
 | Phase 2 clarification loop (AskUserQuestion) | **SKIP ENTIRELY**. Go straight to Phase 3 PRD generation. |
 | Any AskUserQuestion call | **NEVER call it**. All context is in the PRD input. |
 
-When the skill loads, jump directly to **Phase 3: PRD Generation** using context type "feature" (11 sections). Follow the skill's 17 hard output rules and self-check normally.
+When the skill loads, jump directly to **Phase 3: PRD Generation** using context type "feature" (11 sections). Follow the skill's 17 hard output rules and self-check normally. Pass the derived `FINDING_SCOPE` as the scope context.
 
-Pre-answered context: Scope=integration plan, Users=internal, Data=engine contracts, Integrations=engine graph, Non-functional=no regression, Technical=Swift port/adapter, Codebase=follow CLAUDE.md, Compliance=N/A.
+Pre-answered context: Scope=`FINDING_SCOPE` (derived above) with details from integration plan, Users=internal, Data=engine contracts, Integrations=engine graph, Non-functional=no regression, Technical=Swift port/adapter, Codebase=follow CLAUDE.md, Compliance=N/A.
 
 **Invoke skill**: Call `Skill("ai-prd-generator:generate-prd")` with the PRD input content as argument.
 
