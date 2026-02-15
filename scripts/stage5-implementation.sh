@@ -144,6 +144,13 @@ if [[ -n "$DIRTY" ]]; then
     exit 1
 fi
 
+# Resolve paths to absolute (Stage 5 cd's to BUILDER_DIR)
+RUN_DIR="$(cd "$RUN_DIR" && pwd)"
+OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" && pwd)/$(basename "$OUTPUT_DIR")"
+BUILDER_DIR="$(cd "$BUILDER_DIR" && pwd)"
+ENGINE_GRAPH="$(cd "$(dirname "$ENGINE_GRAPH")" && pwd)/$(basename "$ENGINE_GRAPH")"
+CONFIG_PATH="$(cd "$(dirname "$CONFIG_PATH")" && pwd)/$(basename "$CONFIG_PATH")"
+
 ORIGINAL_BRANCH=$(git -C "$BUILDER_DIR" branch --show-current)
 log "INFO" "Builder repo on branch: $ORIGINAL_BRANCH"
 
@@ -342,10 +349,15 @@ PYEOF
         fi
     fi
 
-    # Create feature branch
+    # Create or checkout feature branch
     BRANCH_NAME="pipeline/improvement-${FINDING_ID}"
-    log "INFO" "Creating branch: $BRANCH_NAME"
-    git -C "$BUILDER_DIR" checkout -b "$BRANCH_NAME" 2>/dev/null
+    if git -C "$BUILDER_DIR" show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null; then
+        log "INFO" "Checking out existing branch: $BRANCH_NAME"
+        git -C "$BUILDER_DIR" checkout "$BRANCH_NAME" 2>/dev/null
+    else
+        log "INFO" "Creating branch: $BRANCH_NAME"
+        git -C "$BUILDER_DIR" checkout -b "$BRANCH_NAME" 2>/dev/null
+    fi
 
     # Generate build commands from affected engines
     BUILD_CMDS=""

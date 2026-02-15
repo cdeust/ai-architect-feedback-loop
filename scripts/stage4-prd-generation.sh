@@ -140,6 +140,15 @@ if ! command -v claude &> /dev/null; then
     exit 1
 fi
 
+# Resolve paths to absolute (Stage 4 cd's to BUILDER_DIR)
+RUN_DIR="$(cd "$RUN_DIR" && pwd)"
+OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" && pwd)/$(basename "$OUTPUT_DIR")"
+BUILDER_DIR="$(cd "$BUILDER_DIR" && pwd)"
+PACKAGES_DIR="$(cd "$PACKAGES_DIR" && pwd)"
+ENGINE_GRAPH="$(cd "$(dirname "$ENGINE_GRAPH")" && pwd)/$(basename "$ENGINE_GRAPH")"
+CATEGORY_MAP="$(cd "$(dirname "$CATEGORY_MAP")" && pwd)/$(basename "$CATEGORY_MAP")"
+CONFIG_PATH="$(cd "$(dirname "$CONFIG_PATH")" && pwd)/$(basename "$CONFIG_PATH")"
+
 mkdir -p "$OUTPUT_DIR"
 
 # ---------------------------------------------------------------------------
