@@ -174,7 +174,20 @@ run_stage "prioritize" \
         --category-map "$CONFIG_DIR/category_engine_map.json" \
         --engine-graph "$CONFIG_DIR/engine_graph.json" \
         --output "$RUN_DIR/prioritized_findings.json" \
-        --top-n 20
+        --top-n 20 \
+        --exclude-categories benchmarks
+
+# Check if any actionable findings survived prioritization
+PRIORITIZED_COUNT=$(python3 -c "import json; print(json.load(open('$RUN_DIR/prioritized_findings.json'))['total_output'])" 2>/dev/null || echo "0")
+
+if [[ "$PRIORITIZED_COUNT" -eq 0 ]]; then
+    log "INFO" "No actionable findings after prioritization — product is healthy"
+    write_pipeline_summary 0 0 0
+    "$SCRIPTS_DIR/notify.sh" --message "No actionable findings — product is healthy" 2>/dev/null || true
+    exit 0
+fi
+
+log "INFO" "$PRIORITIZED_COUNT actionable findings prioritized for implementation"
 
 # ─── PHASE 3: Architecture Analysis ───────────────────────────────────────
 

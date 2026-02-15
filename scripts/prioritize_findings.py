@@ -211,11 +211,20 @@ def deduplicate(findings):
 # Main
 # ---------------------------------------------------------------------------
 
-def prioritize(findings, category_map, engine_graph, top_n):
+def prioritize(findings, category_map, engine_graph, top_n,
+               exclude_categories=None):
     """Score, deduplicate, sort, and truncate findings.
 
-    Returns (prioritized_findings, total_input).
+    Args:
+        exclude_categories: Set of category names to skip (e.g. {"benchmarks"}).
+            Benchmark findings are for Stage 8 quality tracking, not for the
+            implementation loop (Stages 2-7).
+
+    Returns list of prioritized findings.
     """
+    if exclude_categories is None:
+        exclude_categories = set()
+
     category_weights = compute_category_engine_weights(category_map, engine_graph)
     mappings = category_map.get("mappings", {})
 
@@ -225,6 +234,10 @@ def prioritize(findings, category_map, engine_graph, top_n):
 
         # Exclude findings with no engine mapping
         if category not in mappings:
+            continue
+
+        # Exclude non-actionable categories (e.g. benchmarks → Stage 8 only)
+        if category in exclude_categories:
             continue
 
         score, breakdown, expected_engines = score_finding(
@@ -270,6 +283,12 @@ def main(argv=None):
         "--top-n", type=int, default=20,
         help="Number of top findings to emit (default: 20)"
     )
+    parser.add_argument(
+        "--exclude-categories", nargs="*", default=["benchmarks"],
+        help="Categories to exclude from prioritization (default: benchmarks). "
+             "Benchmark findings are for Stage 8 quality tracking, not for "
+             "the implementation loop."
+    )
     args = parser.parse_args(argv)
 
     # Load inputs
@@ -279,9 +298,13 @@ def main(argv=None):
 
     findings = findings_data.get("findings", [])
     total_input = len(findings)
+    exclude_set = set(args.exclude_categories) if args.exclude_categories else set()
 
     # Prioritize
-    prioritized = prioritize(findings, category_map, engine_graph, args.top_n)
+    prioritized = prioritize(
+        findings, category_map, engine_graph, args.top_n,
+        exclude_categories=exclude_set,
+    )
 
     # Build output
     output = {
@@ -303,6 +326,7 @@ def main(argv=None):
         "total_input": total_input,
         "total_output": len(prioritized),
         "top_n": args.top_n,
+        "excluded_categories": sorted(exclude_set) if exclude_set else [],
         "status": "complete",
     }))
 
