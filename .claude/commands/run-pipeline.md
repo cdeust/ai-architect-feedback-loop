@@ -47,11 +47,12 @@ If this fails, try production org `3c29257d-7ddb-4ef1-98d4-3d63c491d653` at `api
 Check for existing `pipeline/improvement-*` branches and PRs on the builder repo to skip already-implemented findings:
 
 ```bash
-cd "<BUILDER>" && gh pr list --state all --head "pipeline/improvement-" --json headRefName,state,number --limit 100 2>/dev/null || echo "[]"
+cd "<BUILDER>" && gh pr list --state all --json headRefName,state,number --limit 100 2>/dev/null || echo "[]"
 ```
 
-Parse the output. For each PR, extract the finding ID from the branch name (`pipeline/improvement-<FID>`).
-Build a set `ALREADY_IMPLEMENTED` of finding IDs that have an existing PR (any state: open, closed, merged).
+Parse the JSON output. Filter to entries where `headRefName` starts with `pipeline/improvement-`.
+For each matching PR, extract the finding ID: strip the `pipeline/improvement-` prefix from `headRefName`.
+Build a set `ALREADY_IMPLEMENTED` mapping finding ID → PR number.
 Print: `[PASS] Step 0.2: Found N existing PRs — will skip: <list of FIDs>`
 
 In Phase 2, before processing each finding, check if `FID` is in `ALREADY_IMPLEMENTED`. If so: print `[SKIP] <FID>: already has PR #N` and move to the next finding.
