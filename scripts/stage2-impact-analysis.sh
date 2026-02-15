@@ -347,7 +347,7 @@ PYEOF
     RAW_OUTPUT="$TMP_DIR/raw_${PROCESSED}.json"
     CLAUDE_EXIT=0
 
-    run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" claude -p "$(cat "$TMP_DIR/prompt_${PROCESSED}.md")" \
+    run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${PROCESSED}.md")" \
         --output-format json --max-turns 5 \
         || CLAUDE_EXIT=$?
 
@@ -357,7 +357,7 @@ PYEOF
         # Retry once
         log "INFO" "Retrying $FINDING_ID..."
         CLAUDE_EXIT=0
-        run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" claude -p "$(cat "$TMP_DIR/prompt_${PROCESSED}.md")" \
+        run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${PROCESSED}.md")" \
             --output-format json --max-turns 5 \
             || CLAUDE_EXIT=$?
 

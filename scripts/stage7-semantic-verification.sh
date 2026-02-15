@@ -287,14 +287,14 @@ RAW_OUTPUT="$TMP_DIR/raw_verification.txt"
 CLAUDE_EXIT=0
 
 cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-    claude -p "$(cat "$TMP_DIR/prompt.md")" --max-turns 15 \
+    env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt.md")" --max-turns 15 \
     || CLAUDE_EXIT=$?
 
 if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
     log "WARN" "Claude CLI failed (exit=$CLAUDE_EXIT), retrying..."
     CLAUDE_EXIT=0
     cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-        claude -p "$(cat "$TMP_DIR/prompt.md")" --max-turns 15 \
+        env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt.md")" --max-turns 15 \
         || CLAUDE_EXIT=$?
 
     if [[ "$CLAUDE_EXIT" -ne 0 ]]; then

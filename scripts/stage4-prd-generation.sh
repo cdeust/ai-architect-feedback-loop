@@ -364,14 +364,14 @@ PYEOF
     CLAUDE_EXIT=0
 
     cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-        claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 20 \
+        env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 20 \
         || CLAUDE_EXIT=$?
 
     if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
         log "WARN" "Claude CLI failed for $FINDING_ID (exit=$CLAUDE_EXIT), retrying..."
         CLAUDE_EXIT=0
         cd "$BUILDER_DIR" && run_with_timeout "$TIMEOUT" "$RAW_OUTPUT" \
-            claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 20 \
+            env -u CLAUDECODE claude -p "$(cat "$TMP_DIR/prompt_${FINDING_ID}.md")" --max-turns 20 \
             || CLAUDE_EXIT=$?
 
         if [[ "$CLAUDE_EXIT" -ne 0 ]]; then
