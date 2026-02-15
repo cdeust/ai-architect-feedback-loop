@@ -162,7 +162,17 @@ Same bash command as Run 1 (without the `rm -f`).
 
 Read `<RUN>/validation_stage2_<FID>.json`. If `result` != "ACCEPTED": `[FAIL] Stage 2: <reason>`, skip finding.
 
-### Step 2.2: Stage 3 — Integration Design (double-run)
+### Step 2.2: Extract contracts (once per run, before first Stage 3)
+
+Extract the engine contracts from the builder packages. Run this **once** before the first Stage 3 call:
+
+```bash
+python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<BUILDER>/packages" --format json --output "<RUN>/contracts.json" 2>&1
+```
+
+Read `<RUN>/contracts.json` — it contains the real protocol/port names per engine. Use these for all Stage 3 `contract_changes` fields.
+
+### Step 2.3: Stage 3 — Integration Design (double-run)
 
 **Run 1:**
 ```bash
@@ -171,10 +181,11 @@ rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SC
 
 Read descriptor + prompt. Design the integration:
 1. Read impact report for this finding
-2. Read actual source files in `<BUILDER>/packages/` (use Glob + Read)
-3. Plan per-engine modifications — every `affected_engine` MUST have modifications
-4. All file paths MUST exist (verify with Glob)
-5. Identify cross-engine touchpoints
+2. Read `<RUN>/contracts.json` to know the real protocol names per engine
+3. Read actual source files in `<BUILDER>/packages/` (use Glob + Read)
+4. Plan per-engine modifications — every `affected_engine` MUST have modifications
+5. All file paths MUST exist (verify with Glob)
+6. Identify cross-engine touchpoints
 
 Response format:
 ```json
@@ -198,7 +209,7 @@ Response format:
 ```
 
 **contract_changes rules:**
-- The `protocol` field MUST be a real protocol name from `config/contracts.json` (e.g. `RAGEngineProtocol`, `MetaPromptingEngineProtocol`). NEVER use `"N/A"`, `"none"`, or placeholder names.
+- The `protocol` field MUST be a real protocol name from the extracted `<RUN>/contracts.json` (e.g. `RAGEngineProtocol`, `MetaPromptingEngineProtocol`). NEVER use `"N/A"`, `"none"`, or placeholder names.
 - If an engine modification does NOT change any protocol (e.g. DTO-only or internal-only changes), use an **empty array**: `"contract_changes": []`
 - Only list contract_changes when an actual protocol method signature or port interface changes.
 
