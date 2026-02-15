@@ -210,7 +210,10 @@ def collect_quality_impact(run_dir, baselines_dir):
     if baselines_dir and os.path.isdir(baselines_dir):
         scores = {}
         for entry in os.listdir(baselines_dir):
-            metrics_path = os.path.join(baselines_dir, entry, "metrics.json")
+            entry_path = os.path.join(baselines_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            metrics_path = os.path.join(entry_path, "metrics.json")
             metrics = load_json(metrics_path)
             if not metrics or "verification" not in metrics:
                 continue

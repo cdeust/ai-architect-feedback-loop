@@ -67,6 +67,7 @@ CONFIG_PATH=""
 OUTPUT_DIR=""
 MAX_FINDINGS=20
 TIMEOUT=900
+FINDING_ID_FILTER=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -96,6 +97,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-findings)
             MAX_FINDINGS="$2"
+            shift 2
+            ;;
+        --finding-id)
+            FINDING_ID_FILTER="$2"
             shift 2
             ;;
         --timeout)
@@ -246,9 +251,13 @@ PROCESSED=0
 python3 -c "
 import json
 data = json.load(open('$FINDINGS_PATH'))
-findings = data.get('findings', [])[:$MAX_FINDINGS]
+findings = data.get('findings', [])
+finding_id_filter = '$FINDING_ID_FILTER'
+if finding_id_filter:
+    findings = [f for f in findings if f.get('id', f.get('finding_id', '')) == finding_id_filter]
+else:
+    findings = findings[:$MAX_FINDINGS]
 for i, f in enumerate(findings):
-    # Write each finding as a separate file
     with open('$TMP_DIR/finding_{}.json'.format(i), 'w') as out:
         json.dump(f, out, indent=2)
     print(f.get('id', f.get('finding_id', 'unknown-{}'.format(i))))

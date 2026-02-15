@@ -58,6 +58,7 @@ PACKAGES_DIR=""
 CLAUDE_MD_PATH=""
 OUTPUT_DIR=""
 TIMEOUT=900
+FINDING_ID_FILTER=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -75,6 +76,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --output)
             OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --finding-id)
+            FINDING_ID_FILTER="$2"
             shift 2
             ;;
         --timeout)
@@ -195,6 +200,10 @@ for validation_file in "$IMPACT_DIR"/validation_stage2_*.json; do
     if [[ "$RESULT" == "ACCEPTED" ]]; then
         FINDING_ID=$(python3 -c "import json; print(json.load(open('$validation_file')).get('finding_id', ''))" 2>/dev/null || echo "")
         if [[ -n "$FINDING_ID" ]]; then
+            # If --finding-id is set, only include that specific finding
+            if [[ -n "$FINDING_ID_FILTER" && "$FINDING_ID" != "$FINDING_ID_FILTER" ]]; then
+                continue
+            fi
             ACCEPTED_FINDINGS+=("$FINDING_ID")
         fi
     fi
