@@ -228,17 +228,22 @@ rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SC
 
 Read descriptor + prompt. Then **implement directly**:
 
-1. `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
-2. Read the PRD + integration plan
-3. For each modification in the plan: Read the file, Edit it
-4. Build affected packages: `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"`
-5. Test packages with Tests/ dirs: `swift test --package-path "<BUILDER>/packages/AIPRD<Engine>"`
-6. Fix any failures (iterate until build+tests pass)
-7. Commit: `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "pipeline: <FID> — <description>"`
-8. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
+1. Ensure builder is on main first: `git -C "<BUILDER>" checkout main 2>/dev/null`
+2. Create feature branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
+3. Read the PRD + integration plan
+4. For each modification in the plan: Read the file, Edit it
+5. Build affected packages: `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"`
+6. Test packages with Tests/ dirs: `swift test --package-path "<BUILDER>/packages/AIPRD<Engine>"`
+7. Fix any failures (iterate until build+tests pass)
+8. Commit: `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "pipeline: <FID> — <description>"`
+9. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
 
 **Run 2** — validate:
-Re-run stage5 command (same as Run 1 without rm). Read `<RUN>/stage5_summary.json`. If not ACCEPTED: go to retry.
+Before re-running, ensure builder is on **main** so the script can detect commits on the feature branch:
+```bash
+git -C "<BUILDER>" checkout main 2>/dev/null
+```
+Then re-run stage5 command (same as Run 1 without rm). Read `<RUN>/stage5_summary.json`. If not ACCEPTED: go to retry.
 
 ### Step 3.2: Stage 6 — Gates
 
@@ -281,7 +286,11 @@ Response format:
 PASS if alignment >= 0.7 AND cross-engine PASS AND no CRITICAL findings. All values 0.0–1.0.
 Compute all values BEFORE writing. Do NOT edit the file after writing.
 
-**Run 2** — re-run, read `<RUN>/verification_stage7_<FID>.json`. If not PASS: go to retry.
+**Run 2** — ensure builder is on **main** first:
+```bash
+git -C "<BUILDER>" checkout main 2>/dev/null
+```
+Then re-run stage7 command (same as Run 1 without rm). Read `<RUN>/verification_stage7_<FID>.json`. If not PASS: go to retry.
 
 ### Step 3.4: Retry handling
 
