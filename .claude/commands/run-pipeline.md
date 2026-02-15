@@ -34,6 +34,25 @@ RUN_TS=$(date +%Y%m%d-%H%M%S) && RUN="/Users/cdeust/Documents/Documents - Mac mi
 Save the output as `RUN_TS`. Build `RUN` = `$REPO/runs/$RUN_TS`.
 All subsequent Bash calls must inline the full `RUN` path (do not rely on shell variables persisting across Bash calls).
 
+### Step 0.0: Create working branches (protect main)
+
+Create a working branch in **both repos** so main is never modified directly. All pipeline work happens on these branches.
+
+**Feedback-loop repo:**
+```bash
+git -C "<REPO>" checkout -b "pipeline/run-<RUN_TS>"
+```
+
+**Builder repo:**
+```bash
+git -C "<BUILDER>" checkout -b "pipeline/run-<RUN_TS>"
+```
+
+This `pipeline/run-<RUN_TS>` branch in the builder serves as the **base branch** for the run. Per-finding feature branches (`pipeline/improvement-<FID>`) are created from this base — NOT from main.
+
+If either checkout fails: print `[FAIL] Step 0.0: Could not create working branch` and **stop entirely**.
+Print: `[PASS] Step 0.0: Working branches created — pipeline/run-<RUN_TS>`
+
 ## Step 0.1: License
 
 ```bash
@@ -248,8 +267,8 @@ rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SC
 
 Read descriptor + prompt. Then **implement directly**:
 
-1. Ensure builder is on main first: `git -C "<BUILDER>" checkout main 2>/dev/null`
-2. Create feature branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
+1. Ensure builder is on the run branch: `git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" 2>/dev/null`
+2. Create feature branch from run branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
 3. Read the PRD + integration plan
 4. For each modification in the plan: Read the file, Edit it
 5. Build affected packages: `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"`
@@ -259,9 +278,9 @@ Read descriptor + prompt. Then **implement directly**:
 9. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
 
 **Run 2** — validate:
-Before re-running, ensure builder is on **main** so the script can detect commits on the feature branch:
+Before re-running, ensure builder is on the **run branch** so the script can detect commits on the feature branch:
 ```bash
-git -C "<BUILDER>" checkout main 2>/dev/null
+git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" 2>/dev/null
 ```
 Then re-run stage5 command (same as Run 1 without rm). Read `<RUN>/stage5_summary.json`. If not ACCEPTED: go to retry.
 
@@ -272,7 +291,7 @@ git -C "<BUILDER>" checkout "pipeline/improvement-<FID>" && "<SCRIPTS>/stage6-ga
 ```
 
 ```bash
-git -C "<BUILDER>" checkout main
+git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>"
 ```
 
 Read `<RUN>/enforcement_report.json`. If FAIL: go to retry.
@@ -285,7 +304,7 @@ rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SC
 ```
 
 Read descriptor + prompt. Verify:
-1. Get diff: `git -C "<BUILDER>" diff "main...pipeline/improvement-<FID>" -- packages/ library/`
+1. Get diff: `git -C "<BUILDER>" diff "pipeline/run-<RUN_TS>...pipeline/improvement-<FID>" -- packages/ library/`
 2. Compare each FR/AC in PRD vs implementation
 3. Check cross-engine touchpoints
 4. Check prohibited patterns
@@ -306,9 +325,9 @@ Response format:
 PASS if alignment >= 0.7 AND cross-engine PASS AND no CRITICAL findings. All values 0.0–1.0.
 Compute all values BEFORE writing. Do NOT edit the file after writing.
 
-**Run 2** — ensure builder is on **main** first:
+**Run 2** — ensure builder is on the **run branch** first:
 ```bash
-git -C "<BUILDER>" checkout main 2>/dev/null
+git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" 2>/dev/null
 ```
 Then re-run stage7 command (same as Run 1 without rm). Read `<RUN>/verification_stage7_<FID>.json`. If not PASS: go to retry.
 
@@ -316,14 +335,14 @@ Then re-run stage7 command (same as Run 1 without rm). Read `<RUN>/verification_
 
 On failure at Step 3.1/3.2/3.3:
 1. Write `<RUN>/attempt_<next>_<FID>/failure_context.md` with what failed and why
-2. Delete branch: `git -C "<BUILDER>" checkout main && git -C "<BUILDER>" branch -D "pipeline/improvement-<FID>" 2>/dev/null || true`
+2. Delete branch: `git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" && git -C "<BUILDER>" branch -D "pipeline/improvement-<FID>" 2>/dev/null || true`
 3. Loop to next attempt
 
 After 3 failures: skip finding.
 
 ### Step 3.5: Success
 
-All 3 stages passed: record finding + branch name. Return to main.
+All 3 stages passed: record finding + branch name. Return to run branch: `git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>"`
 
 ---
 
@@ -378,7 +397,14 @@ Run directory: <RUN>
 
 ## Cleanup
 
-Always ensure builder repo is on main when done:
+Return both repos to main when done:
 ```bash
 git -C "<BUILDER>" checkout main 2>/dev/null || true
+git -C "<REPO>" checkout main 2>/dev/null || true
+```
+
+The working branches (`pipeline/run-<RUN_TS>`) are left intact for review. To discard a failed run:
+```
+git -C "<BUILDER>" branch -D "pipeline/run-<RUN_TS>"
+git -C "<REPO>" branch -D "pipeline/run-<RUN_TS>"
 ```
