@@ -85,7 +85,7 @@ export PIPELINE_BUILDER="/absolute/path/to/your-product"
 
 The target product repository must:
 - Be a git repository
-- Have a `CLAUDE.md` file describing its architecture (used by Stages 3, 5, and 7)
+- Optionally have a `CLAUDE.md` file describing its architecture (enriches Stages 3, 5, and 7)
 
 ### 4. Configure for your stack
 
@@ -105,6 +105,7 @@ This file tells the pipeline about your language, build tools, and project struc
   "modules_dir": "packages",
   "domain_module": null,
   "interface_suffix": null,
+  "base_branch": "main",
   "build_command": "make build",
   "test_command": "make test",
   "deploy_command": null,
@@ -115,14 +116,15 @@ This file tells the pipeline about your language, build tools, and project struc
 
 | Field | Description |
 |---|---|
-| `language` | Primary language (`python`, `typescript`, `swift`, `go`, etc.) |
-| `source_extensions` | File extensions to scan (e.g. `[".py"]`, `[".ts", ".tsx"]`) |
+| `language` | Primary language (`python`, `typescript`, `swift`, `go`, `kotlin`, `java`, etc.) |
+| `source_extensions` | File extensions to scan (e.g. `[".py"]`, `[".ts", ".tsx"]`, `[".kt", ".kts"]`) |
 | `test_file_patterns` | Glob patterns for test files |
 | `test_dir_name` | Test directory name convention |
 | `module_prefix` | Prefix stripped from directory names for module discovery |
-| `modules_dir` | Directory containing modules/packages |
+| `modules_dir` | Directory containing modules/packages relative to repo root. Use `"."` if modules are at the repo root (e.g. multi-module Android/Gradle projects) |
 | `domain_module` | Name of shared/domain module (if any) |
 | `interface_suffix` | Suffix for interface types (if any) |
+| `base_branch` | Main/default branch name (default: `"main"`). Use `"develop"`, `"develop-ui"`, etc. if your project uses a different base branch |
 | `build_command` | Single build command to run in the target project |
 | `test_command` | Single test command to run in the target project |
 | `deploy_command` | Deployment command or `null` to skip deployment stage |
@@ -270,7 +272,12 @@ The pipeline accepts any JSON input that matches the schema below.
 
 ### Input JSON schema
 
-Place a JSON file at the path expected by Stage 1 (typically `tv_output.json` in the TV directory, or pass `--input` directly to `parse_findings.py`):
+Place a JSON file at one of these locations (checked in order by `/run-pipeline`):
+1. `~/Downloads/TechnicalVeil/` directory (legacy TV format)
+2. `runs/findings_input.json` in the pipeline repo
+3. `tv_output.json` in the target product repo
+
+Or pass `--tv-input <path>` directly to `stage1-parse-findings.sh`:
 
 ```json
 {

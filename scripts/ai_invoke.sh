@@ -110,14 +110,16 @@ with open('$OUTPUT_DIR/pending_stage.json', 'w') as f:
         # --- CLI mode ---
         local claude_exit=0
         run_with_timeout "$timeout" "$output_file" \
-            env -u CLAUDECODE claude -p "$(cat "$prompt_file")" "$@" \
+            env -u CLAUDECODE claude -p "$(cat "$prompt_file")" \
+            --permission-mode acceptEdits "$@" \
             || claude_exit=$?
 
         if [[ "$claude_exit" -ne 0 ]]; then
             log "WARN" "Claude CLI failed for $finding_id (exit=$claude_exit), retrying..."
             claude_exit=0
             run_with_timeout "$timeout" "$output_file" \
-                env -u CLAUDECODE claude -p "$(cat "$prompt_file")" "$@" \
+                env -u CLAUDECODE claude -p "$(cat "$prompt_file")" \
+                --permission-mode acceptEdits "$@" \
                 || claude_exit=$?
         fi
 

@@ -7,6 +7,7 @@
   "modules_dir": "packages",
   "domain_module": null,
   "interface_suffix": null,
+  "base_branch": "main",
   "build_command": "make build",
   "test_command": "make test",
   "deploy_command": null,

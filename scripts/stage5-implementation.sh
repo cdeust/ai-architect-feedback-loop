@@ -186,7 +186,13 @@ fi
 # Extract contracts once
 # ---------------------------------------------------------------------------
 
-PACKAGES_DIR="$BUILDER_DIR/packages"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+MODULES_DIR=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('modules_dir', 'packages'))" 2>/dev/null || echo "packages")
+if [[ "$MODULES_DIR" == "." ]]; then
+    PACKAGES_DIR="$BUILDER_DIR"
+else
+    PACKAGES_DIR="$BUILDER_DIR/$MODULES_DIR"
+fi
 
 log "INFO" "Extracting engine contracts from $PACKAGES_DIR"
 

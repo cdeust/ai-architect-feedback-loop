@@ -94,7 +94,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required args
-for arg_name in IMPACT_DIR PACKAGES_DIR CLAUDE_MD_PATH OUTPUT_DIR; do
+for arg_name in IMPACT_DIR PACKAGES_DIR OUTPUT_DIR; do
     if [[ -z "${!arg_name}" ]]; then
         log "ERROR" "Missing required argument: --$(echo "$arg_name" | tr '_' '-' | tr '[:upper:]' '[:lower:]')"
         exit 1

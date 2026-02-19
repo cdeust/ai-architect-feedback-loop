@@ -117,14 +117,16 @@ def check_files_exist(plan, packages_dir):
             path = file_entry.get("path", "")
             if action != "modify":
                 continue
-            # Construct full path (try relative to packages parent)
-            full_path = os.path.join(packages_dir, "..", path)
-            if not os.path.isfile(full_path):
-                # Try directly under packages dir
-                engine = mod.get("engine", "")
-                alt_path = os.path.join(packages_dir, engine, path)
-                if not os.path.isfile(alt_path):
-                    missing.append(path)
+            # Try multiple resolution strategies for the file path
+            candidates = [
+                os.path.join(packages_dir, path),           # path relative to packages dir
+                os.path.join(packages_dir, "..", path),      # path relative to packages parent
+            ]
+            engine = mod.get("engine", "")
+            if engine:
+                candidates.append(os.path.join(packages_dir, engine, path))  # engine/path under packages
+            if not any(os.path.isfile(c) for c in candidates):
+                missing.append(path)
 
     if missing:
         return {"check": "files_exist", "result": "FAIL",
@@ -139,6 +141,16 @@ def check_contract_references(plan, contracts, project_config=None):
                 "reason": "No contracts provided"}
 
     engines_data = contracts.get("engines", {})
+
+    # If no protocols were extracted at all, the language likely lacks
+    # contract extraction support — skip rather than fail.
+    total_protocols = sum(
+        len(e.get("protocols", [])) + len(e.get("ports", []))
+        for e in engines_data.values()
+    )
+    if total_protocols == 0:
+        return {"check": "contract_references", "result": "SKIP",
+                "reason": "No protocols extracted (language may lack contract parser)"}
     invalid = []
 
     for mod in plan.get("modifications", []):

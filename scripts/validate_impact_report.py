@@ -197,6 +197,17 @@ def check_contract_references(report, contracts):
         return {"check": "contract_reference_validation", "result": "SKIP",
                 "reason": "No contracts provided"}
 
+    # If no protocols were extracted at all, the language likely lacks
+    # contract extraction support — skip rather than fail.
+    engines_data = contracts.get("engines", {})
+    total_protocols = sum(
+        len(e.get("protocols", [])) + len(e.get("ports", []))
+        for e in engines_data.values()
+    )
+    if total_protocols == 0:
+        return {"check": "contract_reference_validation", "result": "SKIP",
+                "reason": "No protocols extracted (language may lack contract parser)"}
+
     breakdown = report.get("scoring_breakdown", {})
     contract_impact = breakdown.get("contract_impact", {}).get("value", 0.0)
     if contract_impact <= 0.0:
@@ -204,7 +215,6 @@ def check_contract_references(report, contracts):
 
     # Check that at least one affected engine has protocols in contracts
     affected = report.get("affected_engines", [])
-    engines_data = contracts.get("engines", {})
     has_protocols = False
     for engine in affected:
         engine_contracts = engines_data.get(engine, {})

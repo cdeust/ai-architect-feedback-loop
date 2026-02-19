@@ -16,6 +16,14 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve base branch from project config
+BASE_BRANCH="main"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+fi
+
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_RUN=0
@@ -59,7 +67,7 @@ EOF
 # Architecture Rules
 EOF
 
-    git -C "$builder_dir" init -b main > /dev/null 2>&1
+    git -C "$builder_dir" init -b "$BASE_BRANCH" > /dev/null 2>&1
     git -C "$builder_dir" add . > /dev/null 2>&1
     git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
         commit -m "Initial commit" > /dev/null 2>&1
@@ -148,29 +156,29 @@ create_mock_scripts() {
     mkdir -p "$mock_scripts_dir"
 
     # Mock Stage 5 — always succeeds (creates branch, makes commit)
-    cat > "$mock_scripts_dir/stage5-implementation.sh" <<'S5EOF'
+    cat > "$mock_scripts_dir/stage5-implementation.sh" <<S5EOF
 #!/usr/bin/env bash
 set -euo pipefail
 FID="" BD="" OD=""
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --finding-id) FID="$2"; shift 2;;
-        --builder-dir) BD="$2"; shift 2;;
-        --output) OD="$2"; shift 2;;
+while [[ \$# -gt 0 ]]; do
+    case "\$1" in
+        --finding-id) FID="\$2"; shift 2;;
+        --builder-dir) BD="\$2"; shift 2;;
+        --output) OD="\$2"; shift 2;;
         --failure-context|--run-dir|--engine-graph|--config) shift 2;;
         *) shift;;
     esac
 done
-BR="pipeline/improvement-$FID"
-git -C "$BD" branch --list "$BR" | grep -q pipeline 2>/dev/null || git -C "$BD" checkout -b "$BR" > /dev/null 2>&1
-echo "// x" >> "$BD/packages/AIPRDRAGEngine/Sources/Retrieval/ContextualBM25.swift"
-git -C "$BD" add -A > /dev/null 2>&1
-git -C "$BD" -c user.name=T -c user.email=t@t commit -m "feat" > /dev/null 2>&1
-git -C "$BD" checkout main > /dev/null 2>&1
-mkdir -p "$OD"
+BR="pipeline/improvement-\$FID"
+git -C "\$BD" branch --list "\$BR" | grep -q pipeline 2>/dev/null || git -C "\$BD" checkout -b "\$BR" > /dev/null 2>&1
+echo "// x" >> "\$BD/packages/AIPRDRAGEngine/Sources/Retrieval/ContextualBM25.swift"
+git -C "\$BD" add -A > /dev/null 2>&1
+git -C "\$BD" -c user.name=T -c user.email=t@t commit -m "feat" > /dev/null 2>&1
+git -C "\$BD" checkout "$BASE_BRANCH" > /dev/null 2>&1
+mkdir -p "\$OD"
 python3 -c "
 import json
-json.dump({'stage':'implementation','findings_processed':1,'accepted':1,'rejected':0,'failed':0,'reports':[{'finding_id':'$FID','result':'ACCEPTED'}]},open('$OD/stage5_summary.json','w'),indent=2)
+json.dump({'stage':'implementation','findings_processed':1,'accepted':1,'rejected':0,'failed':0,'reports':[{'finding_id':'\$FID','result':'ACCEPTED'}]},open('\$OD/stage5_summary.json','w'),indent=2)
 "
 S5EOF
     chmod +x "$mock_scripts_dir/stage5-implementation.sh"

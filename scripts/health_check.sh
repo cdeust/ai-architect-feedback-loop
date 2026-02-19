@@ -151,15 +151,19 @@ if [[ -d "$BUILDER_DIR" ]]; then
         CHECKS+=("{\"check\":\"Git clean\",\"result\":\"OK\",\"level\":\"INFO\"}")
     fi
 
-    # On main branch check
+    # On base branch check (configurable via project.json base_branch, defaults to "main")
+    BASE_BRANCH="main"
+    if [[ -f "$PROJECT_CONFIG" ]]; then
+        BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+    fi
     CURRENT_BRANCH=$(git -C "$BUILDER_DIR" branch --show-current 2>/dev/null || echo "unknown")
-    if [[ "$CURRENT_BRANCH" != "main" ]]; then
+    if [[ "$CURRENT_BRANCH" != "$BASE_BRANCH" ]]; then
         ERRORS=$((ERRORS + 1))
-        log "ERROR" "Builder not on main (current: $CURRENT_BRANCH) — pipeline creates branches from main"
-        CHECKS+=("{\"check\":\"On main branch\",\"result\":\"FAIL\",\"level\":\"ERROR\"}")
+        log "ERROR" "Builder not on $BASE_BRANCH (current: $CURRENT_BRANCH) — pipeline creates branches from $BASE_BRANCH"
+        CHECKS+=("{\"check\":\"On $BASE_BRANCH branch\",\"result\":\"FAIL\",\"level\":\"ERROR\"}")
     else
-        log "INFO" "On main branch — OK"
-        CHECKS+=("{\"check\":\"On main branch\",\"result\":\"OK\",\"level\":\"INFO\"}")
+        log "INFO" "On $BASE_BRANCH branch — OK"
+        CHECKS+=("{\"check\":\"On $BASE_BRANCH branch\",\"result\":\"OK\",\"level\":\"INFO\"}")
     fi
 
     # Stale pipeline branches (warning only)

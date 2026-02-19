@@ -24,6 +24,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAGE_NAME="retry_orchestrator"
 
+# Resolve base branch from project config
+BASE_BRANCH="main"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+fi
+
 # ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
@@ -376,7 +383,7 @@ for (( attempt=1; attempt<=MAX_ATTEMPTS; attempt++ )); do
         local_branch_exists=$(git -C "$BUILDER_DIR" branch --list "$BRANCH_NAME" 2>/dev/null | tr -d ' ')
         if [[ -n "$local_branch_exists" ]]; then
             log "INFO" "Deleting branch $BRANCH_NAME from previous attempt"
-            git -C "$BUILDER_DIR" checkout main 2>/dev/null || true
+            git -C "$BUILDER_DIR" checkout "$BASE_BRANCH" 2>/dev/null || true
             git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
         fi
     fi
@@ -462,8 +469,8 @@ for r in summary.get('reports', []):
         --output "$ATTEMPT_DIR" \
         2>&1 || S6_EXIT=$?
 
-    # Return to main
-    git -C "$BUILDER_DIR" checkout main 2>/dev/null || true
+    # Return to base branch
+    git -C "$BUILDER_DIR" checkout "$BASE_BRANCH" 2>/dev/null || true
 
     if [[ "$S6_EXIT" -ne 0 ]]; then
         # Parse enforcement_report.json for failure details

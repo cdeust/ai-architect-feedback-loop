@@ -65,6 +65,7 @@ CONFIG_PATH=""
 OUTPUT_DIR=""
 TIMEOUT=1200
 MAX_PRDS=20
+MAX_PRD_RETRIES=3
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -102,6 +103,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-prds)
             MAX_PRDS="$2"
+            shift 2
+            ;;
+        --max-prd-retries)
+            MAX_PRD_RETRIES="$2"
             shift 2
             ;;
         *)
@@ -150,6 +155,11 @@ CATEGORY_MAP="$(cd "$(dirname "$CATEGORY_MAP")" && pwd)/$(basename "$CATEGORY_MA
 CONFIG_PATH="$(cd "$(dirname "$CONFIG_PATH")" && pwd)/$(basename "$CONFIG_PATH")"
 
 mkdir -p "$OUTPUT_DIR"
+
+# Read max retries from config if not overridden
+if [[ "$MAX_PRD_RETRIES" -eq 3 && -f "$CONFIG_PATH" ]]; then
+    MAX_PRD_RETRIES=$(python3 -c "import json; print(json.load(open('$CONFIG_PATH')).get('retry', {}).get('max_attempts', 3))" 2>/dev/null || echo 3)
+fi
 
 # ---------------------------------------------------------------------------
 # Temp directory with cleanup
@@ -350,11 +360,14 @@ print(' '.join(report.get('affected_engines', [])))
     # Assemble prompt from template
     echo "$PRD_SUMMARY_SCHEMA" > "$TMP_DIR/schema.txt"
 
+    ARCHITECTURE_MD="$SCRIPT_DIR/../config/architecture.md"
+
     python3 - "$PROMPT_TEMPLATE_PATH" "$TMP_DIR/prd_input_${FINDING_ID}.md" \
-        "$TMP_DIR/schema.txt" "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
+        "$TMP_DIR/schema.txt" "$ENGINE_GRAPH" "$ARCHITECTURE_MD" \
+        "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
 import sys
 
-template_path, prd_input_path, schema_path, output_path = sys.argv[1:5]
+template_path, prd_input_path, schema_path, engine_graph_path, arch_path, output_path = sys.argv[1:7]
 
 with open(template_path) as f:
     template = f.read()
@@ -362,72 +375,109 @@ with open(prd_input_path) as f:
     prd_input = f.read()
 with open(schema_path) as f:
     schema = f.read()
+with open(engine_graph_path) as f:
+    engine_graph = f.read()
+arch = ""
+try:
+    with open(arch_path) as f:
+        arch = f.read()
+except FileNotFoundError:
+    pass
 
 result = template
 result = result.replace("{{PRD_INPUT}}", prd_input)
 result = result.replace("{{PRD_SUMMARY_SCHEMA}}", schema)
+result = result.replace("{{ENGINE_GRAPH}}", engine_graph)
+result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", arch)
 
 with open(output_path, "w") as f:
     f.write(result)
 PYEOF
 
-    # Invoke AI analysis (builder-dir for SKILL.md access)
-    RAW_OUTPUT="$TMP_DIR/raw_${FINDING_ID}.txt"
-    CLAUDE_EXIT=0
+    # -------------------------------------------------------------------
+    # Retry loop: invoke AI → validate → retry with failure context
+    # -------------------------------------------------------------------
+    PRD_ATTEMPT=0
+    PRD_ACCEPTED=false
+    FAILURE_CONTEXT=""
 
-    cd "$BUILDER_DIR"
-    ai_invoke "$TMP_DIR/prompt_${FINDING_ID}.md" "$RAW_OUTPUT" "stage4" "$FINDING_ID" \
-        --max-turns 20 \
-        || CLAUDE_EXIT=$?
+    while [[ "$PRD_ATTEMPT" -lt "$MAX_PRD_RETRIES" ]]; do
+        PRD_ATTEMPT=$((PRD_ATTEMPT + 1))
+        log "INFO" "PRD attempt $PRD_ATTEMPT/$MAX_PRD_RETRIES for $FINDING_ID"
 
-    if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
-        log "INFO" "Session mode: skipping $FINDING_ID (prompt written, awaiting response)"
-        continue
-    elif [[ "$CLAUDE_EXIT" -ne 0 ]]; then
-        log "ERROR" "AI invocation failed for $FINDING_ID (exit=$CLAUDE_EXIT)"
-        FAILED_COUNT=$((FAILED_COUNT + 1))
-        add_summary_result "$FINDING_ID" "FAILED" "AI invocation failed"
-        continue
-    fi
+        # On retry, append failure context to prompt
+        CURRENT_PROMPT="$TMP_DIR/prompt_${FINDING_ID}.md"
+        if [[ -n "$FAILURE_CONTEXT" ]]; then
+            RETRY_PROMPT="$TMP_DIR/prompt_${FINDING_ID}_retry${PRD_ATTEMPT}.md"
+            cat "$CURRENT_PROMPT" > "$RETRY_PROMPT"
+            cat >> "$RETRY_PROMPT" <<RETRY_EOF
 
-    # Collect PRD output files from builder dir (Claude writes them there)
-    PRD_FILES_FOUND=0
-    for prd_file in prd.md prd-verification.md prd-jira.md prd-tests.md; do
-        if [[ -f "$BUILDER_DIR/$prd_file" ]]; then
-            cp "$BUILDER_DIR/$prd_file" "$WORKSPACE/$prd_file"
-            rm -f "$BUILDER_DIR/$prd_file"
-            PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
+## Previous Attempt Failed — Fix These Issues (attempt $((PRD_ATTEMPT - 1)))
+
+The previous PRD generation was REJECTED by the quality gate. You MUST fix
+the following validation failures before regenerating the 4 files:
+
+$FAILURE_CONTEXT
+
+Re-generate all 4 files (prd.md, prd-verification.md, prd-jira.md, prd-tests.md)
+with these issues resolved. Do NOT skip any section or leave placeholders.
+RETRY_EOF
+            CURRENT_PROMPT="$RETRY_PROMPT"
         fi
-    done
 
-    if [[ "$PRD_FILES_FOUND" -eq 0 ]]; then
-        log "WARN" "No PRD files generated for $FINDING_ID"
-        FAILED_COUNT=$((FAILED_COUNT + 1))
-        add_summary_result "$FINDING_ID" "FAILED" "No PRD files generated"
-        continue
-    fi
+        # Invoke AI analysis (builder-dir for skill access)
+        RAW_OUTPUT="$TMP_DIR/raw_${FINDING_ID}_${PRD_ATTEMPT}.txt"
+        CLAUDE_EXIT=0
 
-    # Quality scoring via extract_prd_metrics.py
-    METRICS_FILE="$TMP_DIR/metrics_${FINDING_ID}.json"
-    METRICS_EXIT=0
+        cd "$BUILDER_DIR"
+        ai_invoke "$CURRENT_PROMPT" "$RAW_OUTPUT" "stage4" "$FINDING_ID" \
+            --max-turns 20 \
+            || CLAUDE_EXIT=$?
 
-    METRICS_ARGS=(--output "$METRICS_FILE")
-    [[ -f "$WORKSPACE/prd.md" ]] && METRICS_ARGS+=(--prd "$WORKSPACE/prd.md")
-    [[ -f "$WORKSPACE/prd-verification.md" ]] && METRICS_ARGS+=(--verification "$WORKSPACE/prd-verification.md")
-    [[ -f "$WORKSPACE/prd-tests.md" ]] && METRICS_ARGS+=(--tests "$WORKSPACE/prd-tests.md")
+        if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
+            log "INFO" "Session mode: skipping $FINDING_ID (prompt written, awaiting response)"
+            break
+        elif [[ "$CLAUDE_EXIT" -ne 0 ]]; then
+            log "ERROR" "AI invocation failed for $FINDING_ID attempt $PRD_ATTEMPT (exit=$CLAUDE_EXIT)"
+            continue
+        fi
 
-    python3 "$SCRIPT_DIR/extract_prd_metrics.py" \
-        "${METRICS_ARGS[@]}" > /dev/null 2>&1 || METRICS_EXIT=$?
+        # Collect PRD output files from builder dir (Claude writes them there)
+        PRD_FILES_FOUND=0
+        for prd_file in prd.md prd-verification.md prd-jira.md prd-tests.md; do
+            if [[ -f "$BUILDER_DIR/$prd_file" ]]; then
+                cp "$BUILDER_DIR/$prd_file" "$WORKSPACE/$prd_file"
+                rm -f "$BUILDER_DIR/$prd_file"
+                PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
+            fi
+        done
 
-    if [[ "$METRICS_EXIT" -ne 0 ]]; then
-        log "WARN" "Metrics extraction failed for $FINDING_ID"
-        FAILED_COUNT=$((FAILED_COUNT + 1))
-        add_summary_result "$FINDING_ID" "FAILED" "Metrics extraction failed"
-        continue
-    fi
+        if [[ "$PRD_FILES_FOUND" -eq 0 ]]; then
+            log "WARN" "No PRD files generated for $FINDING_ID (attempt $PRD_ATTEMPT)"
+            FAILURE_CONTEXT="No PRD files were written to disk. You MUST use the Write tool to create all 4 files: prd.md, prd-verification.md, prd-jira.md, prd-tests.md in the current directory."
+            continue
+        fi
 
-    # Quality gate
-    GATE_RESULT=$(python3 - "$METRICS_FILE" "$CONFIG_PATH" <<'PYEOF'
+        # Quality scoring via extract_prd_metrics.py
+        METRICS_FILE="$TMP_DIR/metrics_${FINDING_ID}.json"
+        METRICS_EXIT=0
+
+        METRICS_ARGS=(--output "$METRICS_FILE")
+        [[ -f "$WORKSPACE/prd.md" ]] && METRICS_ARGS+=(--prd "$WORKSPACE/prd.md")
+        [[ -f "$WORKSPACE/prd-verification.md" ]] && METRICS_ARGS+=(--verification "$WORKSPACE/prd-verification.md")
+        [[ -f "$WORKSPACE/prd-tests.md" ]] && METRICS_ARGS+=(--tests "$WORKSPACE/prd-tests.md")
+
+        python3 "$SCRIPT_DIR/extract_prd_metrics.py" \
+            "${METRICS_ARGS[@]}" > /dev/null 2>&1 || METRICS_EXIT=$?
+
+        if [[ "$METRICS_EXIT" -ne 0 ]]; then
+            log "WARN" "Metrics extraction failed for $FINDING_ID (attempt $PRD_ATTEMPT)"
+            FAILURE_CONTEXT="Metrics extraction failed. Ensure prd-verification.md includes '**Overall Score:** NN%' and prd.md has proper FR/AC IDs."
+            continue
+        fi
+
+        # Quality gate
+        GATE_RESULT=$(python3 - "$METRICS_FILE" "$CONFIG_PATH" <<'PYEOF'
 import json, sys
 metrics = json.load(open(sys.argv[1]))
 config = json.load(open(sys.argv[2]))
@@ -440,33 +490,47 @@ elif score >= threshold:
 else:
     print(f"FAIL:{score:.2f}")
 PYEOF
-    )
+        )
 
-    if [[ "$GATE_RESULT" == "NO_SCORE" ]]; then
-        log "WARN" "No verification score for $FINDING_ID"
-        # Still proceed to validation — score check will fail there
-    elif [[ "$GATE_RESULT" == FAIL:* ]]; then
-        SCORE="${GATE_RESULT#FAIL:}"
-        log "INFO" "Quality gate failed for $FINDING_ID (score=$SCORE)"
-    fi
+        if [[ "$GATE_RESULT" == "NO_SCORE" ]]; then
+            log "WARN" "No verification score for $FINDING_ID (attempt $PRD_ATTEMPT)"
+        elif [[ "$GATE_RESULT" == FAIL:* ]]; then
+            SCORE="${GATE_RESULT#FAIL:}"
+            log "INFO" "Quality gate failed for $FINDING_ID (score=$SCORE, attempt $PRD_ATTEMPT)"
+        fi
 
-    # Validate PRD output
-    VALIDATION_FILE="$OUTPUT_DIR/validation_stage4_${FINDING_ID}.json"
-    VALIDATE_EXIT=0
+        # Validate PRD output
+        VALIDATION_FILE="$OUTPUT_DIR/validation_stage4_${FINDING_ID}.json"
+        VALIDATE_EXIT=0
 
-    python3 "$SCRIPT_DIR/validate_prd_output.py" \
-        --prd-dir "$WORKSPACE" \
-        --integration-plan "$INTEGRATION_PLAN" \
-        --engine-graph "$ENGINE_GRAPH" \
-        --metrics "$METRICS_FILE" \
-        --config "$CONFIG_PATH" \
-        --output "$VALIDATION_FILE" > /dev/null 2>&1 || VALIDATE_EXIT=$?
+        python3 "$SCRIPT_DIR/validate_prd_output.py" \
+            --prd-dir "$WORKSPACE" \
+            --integration-plan "$INTEGRATION_PLAN" \
+            --engine-graph "$ENGINE_GRAPH" \
+            --metrics "$METRICS_FILE" \
+            --config "$CONFIG_PATH" \
+            --output "$VALIDATION_FILE" > /dev/null 2>&1 || VALIDATE_EXIT=$?
 
-    VALIDATION_RESULT=$(python3 -c "import json; print(json.load(open('$VALIDATION_FILE')).get('result', 'UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
+        VALIDATION_RESULT=$(python3 -c "import json; print(json.load(open('$VALIDATION_FILE')).get('result', 'UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
 
-    if [[ "$VALIDATION_RESULT" == "ACCEPTED" ]]; then
-        log "INFO" "Finding $FINDING_ID: PRD ACCEPTED"
+        if [[ "$VALIDATION_RESULT" == "ACCEPTED" ]]; then
+            log "INFO" "Finding $FINDING_ID: PRD ACCEPTED (attempt $PRD_ATTEMPT)"
+            PRD_ACCEPTED=true
+            break
+        fi
 
+        # Build failure context for retry
+        FAILURE_CONTEXT=$(python3 -c "
+import json
+data = json.load(open('$VALIDATION_FILE'))
+failures = [c for c in data.get('checks', []) if c.get('result') == 'FAIL']
+for f in failures:
+    print(f'- FAILED: {f[\"check\"]} — {f.get(\"reason\", \"no details\")}')
+" 2>/dev/null || echo "- Validation failed (unknown reason)")
+        log "INFO" "Finding $FINDING_ID: PRD REJECTED (attempt $PRD_ATTEMPT), retrying..."
+    done
+
+    if [[ "$PRD_ACCEPTED" == "true" ]]; then
         # Copy PRD files + metrics to output
         PRD_OUTPUT_DIR="$OUTPUT_DIR/prd_output_${FINDING_ID}"
         mkdir -p "$PRD_OUTPUT_DIR"
@@ -481,7 +545,7 @@ import json
 data = json.load(open('$VALIDATION_FILE'))
 failures = [c['reason'] for c in data.get('checks', []) if c.get('result') == 'FAIL']
 print('; '.join(failures[:3]))" 2>/dev/null || echo "validation failed")
-        log "INFO" "Finding $FINDING_ID: PRD REJECTED ($REJECT_REASON)"
+        log "INFO" "Finding $FINDING_ID: PRD REJECTED after $MAX_PRD_RETRIES attempts ($REJECT_REASON)"
         REJECTED_COUNT=$((REJECTED_COUNT + 1))
         add_summary_result "$FINDING_ID" "REJECTED" "$REJECT_REASON"
     fi

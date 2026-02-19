@@ -30,7 +30,7 @@ SCRIPTS="$REPO/scripts"
 
 ## Step 0: Setup
 
-Run this single Bash command to create the run directory and capture the timestamp:
+Run this single Bash command to create the run directory, read project config, and capture key variables:
 
 ```bash
 REPO="${PIPELINE_REPO:-$(pwd)}" && RUN_TS=$(date +%Y%m%d-%H%M%S) && RUN="$REPO/runs/$RUN_TS" && mkdir -p "$RUN" && echo "$RUN_TS"
@@ -39,21 +39,33 @@ REPO="${PIPELINE_REPO:-$(pwd)}" && RUN_TS=$(date +%Y%m%d-%H%M%S) && RUN="$REPO/r
 Save the output as `RUN_TS`. Build `RUN` = `$REPO/runs/$RUN_TS`.
 All subsequent Bash calls must inline the full `RUN` path (do not rely on shell variables persisting across Bash calls).
 
-### Step 0.0: Create working branches (protect main)
+**Read project config** — Read `<CONFIG>/project.json` with the Read tool and extract:
+- `MODULES_DIR` = value of `modules_dir` (default: `"packages"`)
+- `BASE_BRANCH` = value of `base_branch` (default: `"main"`)
+- `BUILD_CMD` = value of `build_command`
+- `TEST_CMD` = value of `test_command`
 
-Create a working branch in **both repos** so main is never modified directly. All pipeline work happens on these branches.
+Derive `PACKAGES_DIR`:
+- If `MODULES_DIR` is `"."` → `PACKAGES_DIR` = `<BUILDER>`
+- Otherwise → `PACKAGES_DIR` = `<BUILDER>/<MODULES_DIR>`
+
+Use `PACKAGES_DIR` and `BASE_BRANCH` in ALL subsequent steps instead of hardcoded values.
+
+### Step 0.0: Create working branches (protect base branch)
+
+Create a working branch in **both repos** so the base branch is never modified directly. All pipeline work happens on these branches.
 
 **Feedback-loop repo:**
 ```bash
 git -C "<REPO>" checkout -b "pipeline/run-<RUN_TS>"
 ```
 
-**Builder repo:**
+**Builder repo** — ensure we branch from the configured base branch (`BASE_BRANCH`):
 ```bash
-git -C "<BUILDER>" checkout -b "pipeline/run-<RUN_TS>"
+git -C "<BUILDER>" checkout "<BASE_BRANCH>" && git -C "<BUILDER>" checkout -b "pipeline/run-<RUN_TS>"
 ```
 
-This `pipeline/run-<RUN_TS>` branch in the builder serves as the **base branch** for the run. Per-finding feature branches (`pipeline/improvement-<FID>`) are created from this base — NOT from main.
+This `pipeline/run-<RUN_TS>` branch in the builder serves as the **working base** for the run. Per-finding feature branches (`pipeline/improvement-<FID>`) are created from this base — NOT from `<BASE_BRANCH>` directly.
 
 If either checkout fails: print `[FAIL] Step 0.0: Could not create working branch` and **stop entirely**.
 Print: `[PASS] Step 0.0: Working branches created — pipeline/run-<RUN_TS>`
@@ -100,13 +112,17 @@ In Phase 2, before processing each finding, check if `FID` is in `ALREADY_IMPLEM
 
 ### Step 1.1: Parse findings
 
+Determine the findings input source. Check in order:
+1. If `$HOME/Downloads/TechnicalVeil` directory exists → use `--tv-dir "$HOME/Downloads/TechnicalVeil"`
+2. Else if `<REPO>/runs/findings_input.json` exists → use `--tv-input "<REPO>/runs/findings_input.json"`
+3. Else if `<BUILDER>/tv_output.json` exists → use `--tv-input "<BUILDER>/tv_output.json"`
+4. Else → `[FAIL] Step 1.1: No findings input found`
+
 ```bash
-PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage1-parse-findings.sh" --builder-dir "<BUILDER>" --config "<CONFIG>/thresholds.json" --tv-dir "$HOME/Downloads/TechnicalVeil" --output "<RUN>" 2>&1
+PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage1-parse-findings.sh" --builder-dir "<BUILDER>" --config "<CONFIG>/thresholds.json" <FINDINGS_FLAG> --output "<RUN>" 2>&1
 ```
 
-Replace `<RUN>`, `<SCRIPTS>`, `<BUILDER>`, `<CONFIG>` with the full absolute paths. Same for all subsequent commands.
-
-If the tv-dir doesn't exist, use `--tv-input "<BUILDER>/tv_output.json"` instead of `--tv-dir`.
+Replace `<RUN>`, `<SCRIPTS>`, `<BUILDER>`, `<CONFIG>`, `<FINDINGS_FLAG>` with the full absolute paths. Same for all subsequent commands.
 
 ### Step 1.2: Prioritize
 
@@ -134,7 +150,7 @@ If a finding exhausts all retry attempts at any stage, skip it and move to the n
 
 **Run 1** — assembles prompt, exits 42:
 ```bash
-rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage2_<FID>.json" "<RUN>/response_stage2_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage2-impact-analysis.sh" --findings "<RUN>/prioritized_findings.json" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --packages-dir "<BUILDER>/packages" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
+rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage2_<FID>.json" "<RUN>/response_stage2_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage2-impact-analysis.sh" --findings "<RUN>/prioritized_findings.json" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --packages-dir "<PACKAGES_DIR>" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
 ```
 
 Exit code 42 is expected (means prompt is ready). Read `<RUN>/pending_stage.json` with Read tool. Then read the prompt file from the `prompt_file` field.
@@ -143,7 +159,7 @@ Exit code 42 is expected (means prompt is ready). Read `<RUN>/pending_stage.json
 1. Read `<CONFIG>/engine_graph.json` and `<CONFIG>/category_engine_map.json`
 2. Identify affected engines for this finding's category
 3. Trace propagation paths through dependency graph
-4. Read relevant protocol files in `<BUILDER>/packages/` to assess contract impact
+4. Read relevant protocol files in `<PACKAGES_DIR>/` to assess contract impact
 5. On retry: read the previous validation failure from `<RUN>/validation_stage2_<FID>.json` and fix the specific issues
 6. Write response JSON to the `expected_response` path from the descriptor
 
@@ -192,7 +208,7 @@ After 3 failures: `[FAIL] Step 2.1: Stage 2 exhausted` — skip this finding.
 Extract the engine contracts from the builder packages. Run this **once** before the first Stage 3 call:
 
 ```bash
-python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<BUILDER>/packages" --format json --output "<RUN>/contracts.json" 2>&1
+python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<PACKAGES_DIR>" --format json --output "<RUN>/contracts.json" 2>&1
 ```
 
 Read `<RUN>/contracts.json` — it contains the real protocol/port names per engine. Use these for all Stage 3 `contract_changes` fields.
@@ -203,13 +219,15 @@ Read `<RUN>/contracts.json` — it contains the real protocol/port names per eng
 
 **Run 1:**
 ```bash
-rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage3_<FID>.json" "<RUN>/response_stage3_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage3-integration-design.sh" --impact-dir "<RUN>" --packages-dir "<BUILDER>/packages" --claude-md "<BUILDER>/CLAUDE.md" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
+rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage3_<FID>.json" "<RUN>/response_stage3_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage3-integration-design.sh" --impact-dir "<RUN>" --packages-dir "<PACKAGES_DIR>" --claude-md "<BUILDER>/CLAUDE.md" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
 ```
+
+(If `<BUILDER>/CLAUDE.md` doesn't exist, pass `--claude-md /dev/null` instead.)
 
 Read descriptor + prompt. Design the integration:
 1. Read impact report for this finding
 2. Read `<RUN>/contracts.json` to know the real protocol names per engine
-3. Read actual source files in `<BUILDER>/packages/` (use Glob + Read)
+3. Read actual source files in `<PACKAGES_DIR>/` (use Glob + Read)
 4. Plan per-engine modifications — every `affected_engine` MUST have modifications
 5. All file paths MUST exist (verify with Glob)
 6. Identify cross-engine touchpoints
@@ -223,7 +241,7 @@ Response format:
   "modifications": [
     {
       "engine": "EngineA",
-      "files": [{"path": "packages/module_a/src/...", "action": "modify", "description": "what"}],
+      "files": [{"path": "module_a/src/...", "action": "modify", "description": "what"}],
       "contract_changes": [{"protocol": "Name", "change": "add method", "description": "what"}]
     }
   ],
@@ -257,7 +275,7 @@ After 3 failures: `[FAIL] Step 2.3: Stage 3 exhausted` — skip this finding.
 
 **Compose PRD input** (once, before the retry loop):
 ```bash
-python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<BUILDER>/packages" --format markdown --output "<RUN>/contracts_<FID>.md" 2>&1
+python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<PACKAGES_DIR>" --format markdown --output "<RUN>/contracts_<FID>.md" 2>&1
 ```
 
 ```bash
@@ -359,18 +377,16 @@ Read descriptor + prompt. Then **implement directly**:
 2. Create feature branch from run branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
 3. Read the PRD + integration plan
 4. For each modification in the plan: Read the file, Edit it
-5. Build: Read `build_command` from `<CONFIG>/project.json`, run it in BUILDER:
+5. Build: Use `BUILD_CMD` (read from `project.json` in Step 0), run in BUILDER:
    ```bash
-   BUILD_CMD=$(python3 -c "import json; print(json.load(open('<CONFIG>/project.json')).get('build_command', 'make build'))")
-   cd "<BUILDER>" && eval "$BUILD_CMD"
+   cd "<BUILDER>" && eval "<BUILD_CMD>"
    ```
    - **If build fails: read the error output, fix the code, rebuild. Repeat until build succeeds.**
    - Do NOT move on, do NOT skip. Fix the build errors in-place on the feature branch.
 
-6. Test: Read `test_command` from `<CONFIG>/project.json`, run it in BUILDER:
+6. Test: Use `TEST_CMD` (read from `project.json` in Step 0), run in BUILDER:
    ```bash
-   TEST_CMD=$(python3 -c "import json; print(json.load(open('<CONFIG>/project.json')).get('test_command', 'make test'))")
-   cd "<BUILDER>" && eval "$TEST_CMD"
+   cd "<BUILDER>" && eval "<TEST_CMD>"
    ```
    - **If tests fail: read the error output, fix the code or tests, re-run. Repeat until tests pass.**
    - Do NOT move on, do NOT skip. Fix test failures in-place on the feature branch.
@@ -394,8 +410,8 @@ Run in the **foreground** with a 10-minute timeout (`timeout: 600000`). Do NOT u
 
 Skip gates 2, 5, and 6:
 - Gate 2: build diff (skipped, redundant with Gate 4)
-- Gate 5: test suite (`swift` not in script PATH — tests already ran in Step 3.1)
-- Gate 6: encryption integrity (`make distribute` is too slow for pipeline — deployment is checked in Step 4.2)
+- Gate 5: test suite (tests already ran in Step 3.1)
+- Gate 6: deployment integrity (checked separately in Step 4.2)
 
 ```bash
 git -C "<BUILDER>" checkout "pipeline/improvement-<FID>" && "<SCRIPTS>/stage6-gates.sh" --builder-dir "<BUILDER>" --config "<CONFIG>/thresholds.json" --patterns "<CONFIG>/prohibited_patterns.txt" --output "<RUN>" --skip-gate 2 --skip-gate 5 --skip-gate 6 2>&1; echo "EXIT:$?"
@@ -508,9 +524,9 @@ Run directory: <RUN>
 
 ## Cleanup
 
-Return both repos to main when done:
+Return both repos to their base branches when done:
 ```bash
-git -C "<BUILDER>" checkout main 2>/dev/null || true
+git -C "<BUILDER>" checkout "<BASE_BRANCH>" 2>/dev/null || true
 git -C "<REPO>" checkout main 2>/dev/null || true
 ```
 

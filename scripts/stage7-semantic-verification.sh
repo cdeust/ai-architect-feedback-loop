@@ -25,6 +25,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAGE_NAME="stage7_semantic_verification"
 
+# Resolve base branch from project config
+BASE_BRANCH="main"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+fi
+
 # ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
@@ -151,7 +158,7 @@ mkdir -p "$OUTPUT_DIR"
 # ---------------------------------------------------------------------------
 
 TMP_DIR=$(mktemp -d)
-ORIGINAL_BRANCH=$(git -C "$BUILDER_DIR" branch --show-current 2>/dev/null || echo "main")
+ORIGINAL_BRANCH=$(git -C "$BUILDER_DIR" branch --show-current 2>/dev/null || echo "$BASE_BRANCH")
 
 cleanup() {
     # Return to original branch if needed
@@ -171,10 +178,10 @@ log "INFO" "Finding: $FINDING_ID, Branch: $BRANCH"
 # Generate git diff against main on the feature branch
 # ---------------------------------------------------------------------------
 
-GIT_DIFF=$(git -C "$BUILDER_DIR" diff "main..${BRANCH}" -- packages/ library/ 2>/dev/null || echo "")
+GIT_DIFF=$(git -C "$BUILDER_DIR" diff "${BASE_BRANCH}..${BRANCH}" -- packages/ library/ 2>/dev/null || echo "")
 
 if [[ -z "$GIT_DIFF" ]]; then
-    log "WARN" "No diff found between main and $BRANCH"
+    log "WARN" "No diff found between $BASE_BRANCH and $BRANCH"
     GIT_DIFF="(no changes detected)"
 fi
 

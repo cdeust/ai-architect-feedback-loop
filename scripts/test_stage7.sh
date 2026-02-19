@@ -16,6 +16,14 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve base branch from project config
+BASE_BRANCH="main"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+fi
+
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_RUN=0
@@ -64,7 +72,7 @@ EOF
 EOF
 
     # Initialize git repo
-    git -C "$builder_dir" init -b main > /dev/null 2>&1
+    git -C "$builder_dir" init -b "$BASE_BRANCH" > /dev/null 2>&1
     git -C "$builder_dir" add . > /dev/null 2>&1
     git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
         commit -m "Initial commit" > /dev/null 2>&1
@@ -85,8 +93,8 @@ EOF
     git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
         commit -m "feat: add contextual scoring" > /dev/null 2>&1
 
-    # Return to main
-    git -C "$builder_dir" checkout main > /dev/null 2>&1
+    # Return to base branch
+    git -C "$builder_dir" checkout "$BASE_BRANCH" > /dev/null 2>&1
 }
 
 setup_mock_claude_pass() {

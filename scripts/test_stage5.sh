@@ -19,6 +19,14 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Resolve base branch from project config
+BASE_BRANCH="main"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+fi
+
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_RUN=0
@@ -64,7 +72,7 @@ EOF
 EOF
 
     # Initialize git repo
-    git -C "$builder_dir" init -b main > /dev/null 2>&1
+    git -C "$builder_dir" init -b "$BASE_BRANCH" > /dev/null 2>&1
     git -C "$builder_dir" add . > /dev/null 2>&1
     git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
         commit -m "Initial commit" > /dev/null 2>&1
@@ -250,10 +258,10 @@ test_returns_to_original_branch() {
 
     local current_branch
     current_branch=$(git -C "$tmpdir/builder" branch --show-current)
-    if [[ "$current_branch" == "main" ]]; then
-        pass_test "Returned to main branch"
+    if [[ "$current_branch" == "$BASE_BRANCH" ]]; then
+        pass_test "Returned to $BASE_BRANCH branch"
     else
-        fail_test "Branch restoration" "Expected 'main', got '$current_branch'"
+        fail_test "Branch restoration" "Expected '$BASE_BRANCH', got '$current_branch'"
     fi
 
     rm -rf "$tmpdir"

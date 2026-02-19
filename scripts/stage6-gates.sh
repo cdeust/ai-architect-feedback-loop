@@ -32,6 +32,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAGE_NAME="stage6_enforcement"
 
+# Resolve base branch from project config
+BASE_BRANCH="main"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+fi
+
 # ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
@@ -187,13 +194,13 @@ run_gate_1() {
     local current_branch
     current_branch=$(git -C "$BUILDER_DIR" branch --show-current 2>/dev/null || echo "")
     local changed_files=""
-    if [[ -n "$current_branch" && "$current_branch" != "main" ]]; then
-        changed_files=$(git -C "$BUILDER_DIR" diff --name-only "main...$current_branch" -- packages/ library/ 2>/dev/null || echo "")
+    if [[ -n "$current_branch" && "$current_branch" != "$BASE_BRANCH" ]]; then
+        changed_files=$(git -C "$BUILDER_DIR" diff --name-only "${BASE_BRANCH}...$current_branch" -- packages/ library/ 2>/dev/null || echo "")
     fi
 
     # If no changed files (or on main), skip pattern check — no delta to verify
     if [[ -z "$changed_files" ]]; then
-        log "INFO" "Gate 1: No changed files to check — PASS (on main or no delta)"
+        log "INFO" "Gate 1: No changed files to check — PASS (on base branch or no delta)"
         echo '{"reason":"no changed files (delta-only mode)","patterns_checked":0,"violations_found":0,"files_scanned":0,"violations":[]}' > "$details_file"
         local duration=$(( $(date +%s) - start_time ))
         add_gate_result 1 "prohibited_patterns" "PASS" "$duration" "$details_file"

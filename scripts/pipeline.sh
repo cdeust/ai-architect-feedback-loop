@@ -62,6 +62,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------------------------------------------------------------------------
+# Derive packages dir from project config
+# ---------------------------------------------------------------------------
+
+PROJECT_CONFIG="$CONFIG_DIR/project.json"
+MODULES_DIR=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('modules_dir', 'packages'))" 2>/dev/null || echo "packages")
+if [[ "$MODULES_DIR" == "." ]]; then
+    PACKAGES_DIR="$BUILDER_DIR"
+else
+    PACKAGES_DIR="$BUILDER_DIR/$MODULES_DIR"
+fi
+
+# ---------------------------------------------------------------------------
 # Run directory + log setup
 # ---------------------------------------------------------------------------
 
@@ -196,7 +208,7 @@ run_stage "stage2_impact_analysis" \
         --findings "$RUN_DIR/prioritized_findings.json" \
         --engine-graph "$CONFIG_DIR/engine_graph.json" \
         --category-map "$CONFIG_DIR/category_engine_map.json" \
-        --packages-dir "$BUILDER_DIR/packages" \
+        --packages-dir "$PACKAGES_DIR" \
         --config "$CONFIG_DIR/thresholds.json" \
         --output "$RUN_DIR" \
     || { log "ERROR" "Impact analysis failed — cannot assess product impact"; handle_fatal_failure; }
@@ -204,8 +216,8 @@ run_stage "stage2_impact_analysis" \
 run_stage "stage3_integration_design" \
     "$SCRIPTS_DIR/stage3-integration-design.sh" \
         --impact-dir "$RUN_DIR" \
-        --packages-dir "$BUILDER_DIR/packages" \
-        --claude-md "$BUILDER_DIR/CLAUDE.md" \
+        --packages-dir "$PACKAGES_DIR" \
+        --claude-md "${BUILDER_DIR}/CLAUDE.md" \
         --output "$RUN_DIR" \
     || { log "ERROR" "Integration design failed"; handle_fatal_failure; }
 
@@ -214,7 +226,7 @@ run_stage "stage3_integration_design" \
 run_stage "stage4_prd_generation" \
     "$SCRIPTS_DIR/stage4-prd-generation.sh" \
         --run-dir "$RUN_DIR" \
-        --packages-dir "$BUILDER_DIR/packages" \
+        --packages-dir "$PACKAGES_DIR" \
         --builder-dir "$BUILDER_DIR" \
         --engine-graph "$CONFIG_DIR/engine_graph.json" \
         --category-map "$CONFIG_DIR/category_engine_map.json" \

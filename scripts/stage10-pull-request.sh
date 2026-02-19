@@ -21,6 +21,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 STAGE_NAME="stage10_pull_request"
 
+# Resolve base branch from project config
+BASE_BRANCH="main"
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
+fi
+
 # ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
@@ -208,7 +215,7 @@ log "INFO" "Creating PR on $REPO_URL..."
 PR_URL=""
 PR_URL=$(gh pr create \
     --repo "$REPO_URL" \
-    --base main \
+    --base "$BASE_BRANCH" \
     --head "$BRANCH" \
     --title "$TITLE" \
     --body "$(cat "$PR_BODY_FILE")" \

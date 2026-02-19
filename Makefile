@@ -29,6 +29,14 @@ LOGS_DIR := logs
 BENCHMARKS_DIR := benchmarks
 TV_DIR ?= $(HOME)/Downloads/TechnicalVeil
 
+# Derive PACKAGES_DIR from config/project.json modules_dir (default: "packages")
+MODULES_DIR := $(shell python3 -c "import json; print(json.load(open('$(CONFIG_DIR)/project.json')).get('modules_dir', 'packages'))" 2>/dev/null || echo "packages")
+ifeq ($(MODULES_DIR),.)
+PACKAGES_DIR := $(BUILDER_DIR)
+else
+PACKAGES_DIR := $(BUILDER_DIR)/$(MODULES_DIR)
+endif
+
 # Timestamp for pipeline runs
 RUN_TS := $(shell date +%Y%m%d-%H%M%S)
 
@@ -67,7 +75,7 @@ pipeline-stage2: ## Run Stage 2: Cross-engine impact analysis (Claude Code CLI)
 		--findings $(RUNS_DIR)/$(RUN_TS)/prioritized_findings.json \
 		--engine-graph $(CONFIG_DIR)/engine_graph.json \
 		--category-map $(CONFIG_DIR)/category_engine_map.json \
-		--packages-dir $(BUILDER_DIR)/packages \
+		--packages-dir $(PACKAGES_DIR) \
 		--config $(CONFIG_DIR)/thresholds.json \
 		--output $(RUNS_DIR)/$(RUN_TS) \
 		2>&1 | tee $(LOGS_DIR)/stage2-$(RUN_TS).log
@@ -78,8 +86,8 @@ pipeline-stage3: ## Run Stage 3: Integration design (Claude Code CLI)
 	@echo "Running Stage 3: Integration design..."
 	@$(SCRIPTS_DIR)/stage3-integration-design.sh \
 		--impact-dir $(RUNS_DIR)/$(RUN_TS) \
-		--packages-dir $(BUILDER_DIR)/packages \
-		--claude-md $(BUILDER_DIR)/CLAUDE.md \
+		--packages-dir $(PACKAGES_DIR) \
+		--claude-md $(shell test -f $(BUILDER_DIR)/CLAUDE.md && echo $(BUILDER_DIR)/CLAUDE.md || echo /dev/null) \
 		--output $(RUNS_DIR)/$(RUN_TS) \
 		2>&1 | tee $(LOGS_DIR)/stage3-$(RUN_TS).log
 
@@ -89,7 +97,7 @@ pipeline-stage4: ## Run Stage 4: PRD generation (dogfood via SKILL.md)
 	@echo "Running Stage 4: PRD generation (dogfood)..."
 	@$(SCRIPTS_DIR)/stage4-prd-generation.sh \
 		--run-dir $(RUNS_DIR)/$(RUN_TS) \
-		--packages-dir $(BUILDER_DIR)/packages \
+		--packages-dir $(PACKAGES_DIR) \
 		--builder-dir $(BUILDER_DIR) \
 		--engine-graph $(CONFIG_DIR)/engine_graph.json \
 		--category-map $(CONFIG_DIR)/category_engine_map.json \
@@ -225,7 +233,7 @@ uninstall-scheduler: ## Remove nightly pipeline scheduler
 update-engine-graph: ## Regenerate engine dependency graph from package manifests + overrides
 	@echo "Updating engine dependency graph..."
 	@python3 $(SCRIPTS_DIR)/generate_engine_graph.py \
-		--packages-dir $(BUILDER_DIR)/packages \
+		--packages-dir $(PACKAGES_DIR) \
 		--overrides $(CONFIG_DIR)/engine_graph_overrides.json \
 		--output $(CONFIG_DIR)/engine_graph.json
 
