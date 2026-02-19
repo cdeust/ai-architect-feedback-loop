@@ -17,11 +17,13 @@ Print a status line after each step: `[PASS] Step X.Y: description` or `[FAIL] S
 
 ## Paths
 
-All paths are absolute. Do not change them.
+Resolve REPO from the current working directory (the root of this repository).
+BUILDER must be set via the `PIPELINE_BUILDER` environment variable pointing to
+the target product repository, or it defaults to the first sibling directory.
 
 ```
-REPO="/Users/cdeust/Documents/Documents - Mac mini de Clément/Developments/iOS/Personal/Business/ai-architect-feedback-loop"
-BUILDER="/Users/cdeust/Documents/Documents - Mac mini de Clément/Developments/iOS/Personal/Business/ai-architect-prd-builder"
+REPO="${PIPELINE_REPO:-$(pwd)}"
+BUILDER="${PIPELINE_BUILDER:?Set PIPELINE_BUILDER to the target product repo path}"
 CONFIG="$REPO/config"
 SCRIPTS="$REPO/scripts"
 ```
@@ -31,7 +33,7 @@ SCRIPTS="$REPO/scripts"
 Run this single Bash command to create the run directory and capture the timestamp:
 
 ```bash
-RUN_TS=$(date +%Y%m%d-%H%M%S) && RUN="/Users/cdeust/Documents/Documents - Mac mini de Clément/Developments/iOS/Personal/Business/ai-architect-feedback-loop/runs/$RUN_TS" && mkdir -p "$RUN" && echo "$RUN_TS"
+REPO="${PIPELINE_REPO:-$(pwd)}" && RUN_TS=$(date +%Y%m%d-%H%M%S) && RUN="$REPO/runs/$RUN_TS" && mkdir -p "$RUN" && echo "$RUN_TS"
 ```
 
 Save the output as `RUN_TS`. Build `RUN` = `$REPO/runs/$RUN_TS`.
