@@ -527,7 +527,7 @@ PYEOF
     # Build verification using project config
     BUILD_OK=true
     if [[ "$MANIFEST_OK" == "true" ]]; then
-        local verify_build_cmd="make build"
+        verify_build_cmd="make build"
         if [[ -f "$SCRIPT_DIR/../config/project.json" ]]; then
             verify_build_cmd=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/../config/project.json')).get('build_command', 'make build'))" 2>/dev/null || echo "make build")
         fi
