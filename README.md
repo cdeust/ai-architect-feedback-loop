@@ -159,7 +159,7 @@ The pipeline executes 10 stages autonomously:
 
 | Phase | Stages | Description |
 |---|---|---|
-| Discovery | 1 | Parse and prioritize Technical Veil findings |
+| Discovery | 1 | Parse and prioritize findings |
 | Analysis | 2 – 4 | Impact analysis, integration design, PRD generation |
 | Implementation | 5 – 7 | Code changes, quality gates, semantic verification |
 | Delivery | 8 – 10 | Benchmarking, deployment simulation, PR creation |
@@ -203,7 +203,7 @@ make uninstall-scheduler      # Remove the scheduler
 
 The pipeline consumes **findings** — structured items describing issues, improvements, or changes to analyze and implement. Findings can come from any source: code analysis tools, draft specs, design reviews, bug reports, or manual entries.
 
-The default input adapter reads [Technical Veil](https://technicalveil.com) markdown reports, but you can feed the pipeline any JSON that matches the schema below.
+The pipeline accepts any JSON input that matches the schema below.
 
 ### Input JSON schema
 
