@@ -11,7 +11,7 @@ set -euo pipefail
 # Usage:
 #   scripts/stage10-pull-request.sh \
 #       --run-dir runs/TIMESTAMP \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --builder-dir /path/to/target-product \
 #       --engine-graph config/engine_graph.json \
 #       --finding-id tv-001 \
 #       --branch pipeline/improvement-tv-001 \

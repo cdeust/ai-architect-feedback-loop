@@ -12,7 +12,7 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/health_check.sh \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --builder-dir /path/to/target-product \
 #       [--config config/thresholds.json] \
 #       [--output runs/TIMESTAMP]
 # ============================================================================

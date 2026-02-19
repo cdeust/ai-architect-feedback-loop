@@ -19,7 +19,7 @@ Validation rules:
 Usage:
     python3 scripts/validate_integration_plan.py \
         --plan integration_plan_tv-001.json \
-        --packages-dir ../ai-architect-prd-builder/packages \
+        --packages-dir /path/to/target-product/packages \
         [--contracts contracts.json] \
         --output validation_stage3_tv-001.json
 """

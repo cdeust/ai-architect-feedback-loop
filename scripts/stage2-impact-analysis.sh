@@ -14,7 +14,7 @@ set -euo pipefail
 #       --findings runs/TIMESTAMP/prioritized_findings.json \
 #       --engine-graph config/engine_graph.json \
 #       --category-map config/category_engine_map.json \
-#       --packages-dir ../ai-architect-prd-builder/packages \
+#       --packages-dir /path/to/target-product/packages \
 #       --config config/thresholds.json \
 #       --output runs/TIMESTAMP \
 #       [--max-findings 20] \

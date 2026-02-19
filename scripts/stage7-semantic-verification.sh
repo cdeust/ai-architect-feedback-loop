@@ -12,7 +12,7 @@ set -euo pipefail
 # Usage:
 #   scripts/stage7-semantic-verification.sh \
 #       --run-dir runs/TIMESTAMP \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --builder-dir /path/to/target-product \
 #       --engine-graph config/engine_graph.json \
 #       --config config/thresholds.json \
 #       --patterns config/prohibited_patterns.txt \

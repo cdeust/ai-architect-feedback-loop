@@ -11,8 +11,8 @@ set -euo pipefail
 # Usage (called by Makefile pipeline-stage4):
 #   scripts/stage4-prd-generation.sh \
 #       --run-dir runs/TIMESTAMP \
-#       --packages-dir ../ai-architect-prd-builder/packages \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --packages-dir /path/to/target-product/packages \
+#       --builder-dir /path/to/target-product \
 #       --engine-graph config/engine_graph.json \
 #       --category-map config/category_engine_map.json \
 #       --config config/thresholds.json \

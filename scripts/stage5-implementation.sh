@@ -11,7 +11,7 @@ set -euo pipefail
 # Usage (called by Makefile pipeline-stage5):
 #   scripts/stage5-implementation.sh \
 #       --run-dir runs/TIMESTAMP \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --builder-dir /path/to/target-product \
 #       --engine-graph config/engine_graph.json \
 #       --config config/thresholds.json \
 #       --output runs/TIMESTAMP \

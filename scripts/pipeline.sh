@@ -21,7 +21,7 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/pipeline.sh \
-#       [--builder-dir ../ai-architect-prd-builder] \
+#       [--builder-dir /path/to/target-product] \
 #       [--tv-dir ~/Downloads/TechnicalVeil] \
 #       [--dry-run]
 # ============================================================================
@@ -35,7 +35,7 @@ SCRIPTS_DIR="$REPO_DIR/scripts"
 CONFIG_DIR="$REPO_DIR/config"
 
 # Defaults
-BUILDER_DIR="${BUILDER_DIR:-$REPO_DIR/../ai-architect-prd-builder}"
+BUILDER_DIR="${BUILDER_DIR:-${PIPELINE_BUILDER:?Set BUILDER_DIR or PIPELINE_BUILDER to the target product repo}}"
 TV_DIR="${TV_DIR:-$HOME/Downloads/TechnicalVeil}"
 DRY_RUN=false
 

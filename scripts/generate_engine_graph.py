@@ -7,7 +7,7 @@ overrides, detects cycles, and writes engine_graph.json.
 
 Usage:
     python3 scripts/generate_engine_graph.py \
-        --packages-dir ../ai-architect-prd-builder/packages \
+        --packages-dir /path/to/target-product/packages \
         --overrides config/engine_graph_overrides.json \
         --output config/engine_graph.json
 """

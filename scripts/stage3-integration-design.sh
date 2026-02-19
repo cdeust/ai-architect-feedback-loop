@@ -11,8 +11,8 @@ set -euo pipefail
 # Usage (called by Makefile pipeline-stage3):
 #   scripts/stage3-integration-design.sh \
 #       --impact-dir runs/TIMESTAMP \
-#       --packages-dir ../ai-architect-prd-builder/packages \
-#       --claude-md ../ai-architect-prd-builder/CLAUDE.md \
+#       --packages-dir /path/to/target-product/packages \
+#       --claude-md /path/to/target-product/CLAUDE.md \
 #       --output runs/TIMESTAMP \
 #       [--timeout 900]
 # ============================================================================

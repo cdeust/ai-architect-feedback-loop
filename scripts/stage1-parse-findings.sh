@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Usage (called by Makefile pipeline-stage1):
 #   scripts/stage1-parse-findings.sh \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --builder-dir /path/to/target-product \
 #       --config config/thresholds.json \
 #       --output runs/20260211-120000 \
 #       --tv-dir /path/to/TechnicalVeil

@@ -1,5 +1,5 @@
 # ============================================================================
-# ai-architect-feedback-loop — Pipeline Feedback System
+# Pipeline Feedback System
 # ============================================================================
 #
 # Full pipeline:    make pipeline-run | make pipeline-health-check
@@ -12,7 +12,7 @@
 # Health:           make pipeline-health
 #
 # Prerequisites:
-#   - Sibling project: ../ai-architect-prd-builder
+#   - Target product repo (set BUILDER_DIR or PIPELINE_BUILDER)
 #   - Python 3.10+ (for scoring / benchmarks)
 #   - jq (for JSON processing)
 # ============================================================================
@@ -21,7 +21,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # Paths
-BUILDER_DIR := ../ai-architect-prd-builder
+BUILDER_DIR ?= $(or $(PIPELINE_BUILDER),$(error Set BUILDER_DIR or PIPELINE_BUILDER to the target product repo))
 CONFIG_DIR := config
 SCRIPTS_DIR := scripts
 RUNS_DIR := runs
@@ -341,7 +341,7 @@ clean: ## Remove pipeline run artifacts and logs
 
 .PHONY: help
 help: ## Show this help
-	@echo "ai-architect-feedback-loop — Pipeline Feedback System"
+	@echo "Pipeline Feedback System"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""

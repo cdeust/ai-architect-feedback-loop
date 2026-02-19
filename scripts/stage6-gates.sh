@@ -19,7 +19,7 @@ set -euo pipefail
 #
 # Usage (called by Makefile pipeline-gates):
 #   scripts/stage6-gates.sh \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --builder-dir /path/to/target-product \
 #       --config config/thresholds.json \
 #       --patterns config/prohibited_patterns.txt \
 #       --output runs/20260211-120000

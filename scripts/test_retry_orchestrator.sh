@@ -361,7 +361,7 @@ test_creates_issue_after_exhaustion() {
     create_mock_scripts "$mock_dir" "$tmpdir/builder" "always_fail"
 
     # Add mock git remote to builder for gh issue create
-    git -C "$tmpdir/builder" remote add origin "https://github.com/test/ai-architect-prd-builder.git" 2>/dev/null || true
+    git -C "$tmpdir/builder" remote add origin "https://github.com/test/target-product.git" 2>/dev/null || true
 
     local exit_code=0
     PATH="$mock_dir:$PATH" "$SCRIPT_DIR/retry_orchestrator.sh" \

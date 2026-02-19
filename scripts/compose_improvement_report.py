@@ -460,7 +460,7 @@ def main():
 
     report = {
         "run_id": run_id,
-        "product": "ai-architect-prd-builder",
+        "product": os.path.basename(os.environ.get("PIPELINE_BUILDER", "target-product")),
         "timestamp": timestamp,
         "duration_seconds": timing["total_seconds"],
         "duration_warning": timing["duration_warning"],

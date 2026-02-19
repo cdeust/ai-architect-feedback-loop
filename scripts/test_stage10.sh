@@ -65,7 +65,7 @@ EOF
         commit -m "Initial commit" > /dev/null 2>&1
 
     # Add fake remote
-    git -C "$builder_dir" remote add origin "https://github.com/test/ai-architect-prd-builder.git" 2>/dev/null || true
+    git -C "$builder_dir" remote add origin "https://github.com/test/target-product.git" 2>/dev/null || true
 
     # Create feature branch with a change
     git -C "$builder_dir" checkout -b "pipeline/improvement-tv-pr" > /dev/null 2>&1
@@ -174,10 +174,10 @@ elif [[ "\$1" == "pr" && "\$2" == "create" ]]; then
             CAPTURE_BODY=true
         fi
     done
-    echo "https://github.com/test/ai-architect-prd-builder/pull/42"
+    echo "https://github.com/test/target-product/pull/42"
 elif [[ "\$1" == "issue" && "\$2" == "create" ]]; then
     echo "ISSUE_CREATE: \$@" >> "$gh_log"
-    echo "https://github.com/test/ai-architect-prd-builder/issues/99"
+    echo "https://github.com/test/target-product/issues/99"
 fi
 MOCKEOF
     chmod +x "$mock_dir/gh"

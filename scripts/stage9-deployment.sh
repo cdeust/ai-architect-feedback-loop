@@ -5,14 +5,14 @@ set -euo pipefail
 # stage9-deployment.sh — Stage 9: Deployment Simulation
 # ============================================================================
 #
-# Wraps the prd-builder's existing `make distribute` target which runs:
+# Wraps the target product's existing `make distribute` target which runs:
 #   key injection -> build 8 XCFrameworks -> encrypt -> 40 encryption tests
 #
 # Verifies post-distribute state: public keys injected (not placeholder), exit code 0.
 #
 # Usage:
 #   scripts/stage9-deployment.sh \
-#       --builder-dir ../ai-architect-prd-builder \
+#       --builder-dir /path/to/target-product \
 #       --output runs/20260215-120000
 #
 # ============================================================================

@@ -34,8 +34,10 @@ from extract_prd_metrics import (
 # ---------------------------------------------------------------------------
 
 DOGFOOD_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "ai-architect-prd-builder", "dogfood", "pipeline-feedback"
+    os.environ.get("PIPELINE_BUILDER", os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "target-product"
+    )),
+    "dogfood", "pipeline-feedback"
 )
 
 VERIFICATION_FILE = os.path.join(

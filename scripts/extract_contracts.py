@@ -12,7 +12,7 @@ Understands the product's port/adapter naming convention:
 
 Usage:
     python3 scripts/extract_contracts.py \
-        --packages-dir ../ai-architect-prd-builder/packages \
+        --packages-dir /path/to/target-product/packages \
         --output /tmp/contracts.md \
         [--engines RAGEngine VerificationEngine] \
         [--format markdown|json] \

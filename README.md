@@ -10,13 +10,29 @@ This pipeline command (`/run-pipeline`) is **free to use**.
 
 The pipeline depends on the **AI PRD Generator** skill (`ai-prd-generator`) at Stage 4 to produce product requirement documents. The PRD Generator is a licensed product by Clement DEUST / [ai-architect.tools](https://ai-architect.tools) and **requires a valid license key** to operate.
 
-You can obtain a license at [ai-architect.tools](https://ai-architect.tools). The key must be placed at:
+You can obtain a license at [ai-architect.tools](https://ai-architect.tools). The pipeline validates the license once at startup (Step 0.1) and reuses that validation for the entire run.
 
-```
-~/.aiprd/license-key
-```
+## Quick start
 
-The pipeline validates the license once at startup (Step 0.1) and reuses that validation for the entire run.
+```bash
+# 1. Clone
+git clone <this-repo-url>
+cd feedback-loop
+
+# 2. Install your AI PRD Generator license key
+mkdir -p ~/.aiprd
+echo "YOUR_LICENSE_KEY" > ~/.aiprd/license-key
+
+# 3. Point the pipeline at your target product
+export PIPELINE_BUILDER="/absolute/path/to/your-product"
+
+# 4. Verify everything is ready
+make pipeline-health-check
+
+# 5. Run the pipeline
+claude                  # launch Claude Code
+/run-pipeline           # type this in the Claude Code session
+```
 
 ## Prerequisites
 
@@ -25,19 +41,9 @@ The pipeline validates the license once at startup (Step 0.1) and reuses that va
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | CLI must be installed and authenticated |
 | Python 3.10+ | Used by validators and scoring scripts |
 | `jq` | JSON processing in stage scripts |
-| `gh` | GitHub CLI — for PR creation (Stage 10) |
+| `gh` | GitHub CLI — for PR creation (Stage 10). Run `gh auth login` first. |
 | `git` | Repository operations |
 | AI PRD Generator license | See [License](#license) above |
-
-### Target project
-
-The pipeline operates on a **target repository** (the product being improved). By default it expects the target as a sibling directory named via the `PIPELINE_BUILDER` environment variable. See [Configuration — Paths](#paths) for details.
-
-```
-parent/
-  feedback-loop/    # this repo
-  your-product/     # the target project
-```
 
 ## Setup
 
@@ -45,18 +51,66 @@ parent/
 
 ```bash
 git clone <this-repo-url>
+cd feedback-loop
 ```
 
 ### 2. Install your license key
+
+Get a key from [ai-architect.tools](https://ai-architect.tools), then:
 
 ```bash
 mkdir -p ~/.aiprd
 echo "YOUR_LICENSE_KEY" > ~/.aiprd/license-key
 ```
 
-### 3. Install the `/run-pipeline` command
+### 3. Set the target product path
 
-The command is defined in `.claude/commands/run-pipeline.md` and is automatically available when you open Claude Code from within this project directory:
+The pipeline needs to know where your target product repository lives. Set the `PIPELINE_BUILDER` environment variable to its **absolute path**:
+
+```bash
+export PIPELINE_BUILDER="/absolute/path/to/your-product"
+```
+
+To make this persistent, add it to your shell profile:
+
+```bash
+# ~/.zshrc or ~/.bashrc
+export PIPELINE_BUILDER="/absolute/path/to/your-product"
+```
+
+The target product repository must:
+- Be a git repository
+- Contain a `packages/` directory with your engine/module source code
+- Have a `CLAUDE.md` file describing its architecture (used by Stages 3, 5, and 7)
+- Support `swift build` and `swift test` (or equivalent build commands configured in the stage scripts)
+
+### 4. Adapt the configuration to your product
+
+The pipeline ships with default configuration targeting a Swift port/adapter architecture. You will need to update these files to match your product:
+
+**`config/engine_graph_overrides.json`** — Define your product's module/engine dependency graph. Each entry needs a `role`, `feeds` (downstream dependents), and `fed_by` (upstream dependencies):
+
+```json
+{
+  "YourModule": {
+    "role": "What this module does",
+    "feeds": ["DownstreamModule"],
+    "fed_by": ["UpstreamModule"]
+  }
+}
+```
+
+**`config/category_engine_map.json`** — Map finding categories to your product's modules. This tells the pipeline which modules are affected by each type of finding.
+
+**`config/thresholds.json`** — Tune scoring thresholds (impact scores, quality minimums, retry limits) to your quality bar.
+
+**`config/prohibited_patterns.txt`** — Add or remove regex patterns that Stage 6 rejects (TODO, FIXME, stubs, etc.).
+
+**`prompts/`** — The prompt templates reference architecture details (port names, engine roles, module structure). Update them to describe your product's architecture so Claude generates accurate analysis and code.
+
+### 5. Install the `/run-pipeline` command
+
+The command is defined in `.claude/commands/run-pipeline.md` and is **automatically available** when you open Claude Code from within this project directory:
 
 ```bash
 cd feedback-loop
@@ -67,7 +121,7 @@ Type `/run-pipeline` in the Claude Code session to invoke it.
 
 #### Using it in another project
 
-To make the command available outside this repository, copy the command file into your target project:
+Copy the command file into your target project so it's available there too:
 
 ```bash
 mkdir -p /path/to/your-project/.claude/commands
@@ -81,13 +135,15 @@ mkdir -p ~/.claude/commands
 cp .claude/commands/run-pipeline.md ~/.claude/commands/
 ```
 
-### 4. Verify the setup
+### 6. Verify the setup
 
-Run the health check to confirm all dependencies are in place:
+Run the health check to confirm all dependencies and paths are correct:
 
 ```bash
 make pipeline-health-check
 ```
+
+This validates: toolchain (claude, python, jq, gh, git), target product accessibility, configuration file presence, and license key.
 
 ## Usage
 
@@ -119,7 +175,11 @@ Failed stages retry up to 3 times before moving on. A summary report is generate
 
 ### Run individual stages via Make
 
+All Make targets require `BUILDER_DIR` (or `PIPELINE_BUILDER`) to be set:
+
 ```bash
+export PIPELINE_BUILDER="/path/to/your-product"
+
 make pipeline-stage1          # Parse findings
 make pipeline-stage2          # Impact analysis
 make pipeline-stage3          # Integration design
@@ -148,7 +208,7 @@ Reads Technical Veil output, normalizes findings into a ranked list scored by re
 Computes a compound impact score across four dimensions: engines affected, propagation depth, contract impact, and test coverage delta. Findings must score above 0.3 and affect at least 2 engines to proceed.
 
 ### Stage 3 — Integration design
-Designs architectural modifications respecting the port/adapter architecture. Validates that all referenced files exist and protocol changes are consistent.
+Designs architectural modifications respecting the target product's architecture. Validates that all referenced files exist and protocol changes are consistent.
 
 ### Stage 4 — PRD generation
 Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd-verification.md`, `prd-jira.md`, and `prd-tests.md`. Scope (simple/moderate/complex) is derived automatically from pipeline artifacts.
@@ -180,10 +240,10 @@ Creates a pull request per finding with a structured description linking back to
 │       └── run-pipeline.md        # The /run-pipeline slash command
 ├── config/
 │   ├── thresholds.json            # Scoring thresholds for all stages
-│   ├── category_engine_map.json   # Finding category to engine mapping
-│   ├── engine_graph_overrides.json# Engine dependency graph
+│   ├── category_engine_map.json   # Finding category → module mapping
+│   ├── engine_graph_overrides.json# Module dependency graph
 │   └── prohibited_patterns.txt    # Anti-pattern regex rules
-├── prompts/                       # Stage prompt templates
+├── prompts/                       # Stage prompt templates (customize for your product)
 │   ├── impact_analysis.md
 │   ├── integration_design.md
 │   ├── prd_generation.md
@@ -204,40 +264,39 @@ Creates a pull request per finding with a structured description linking back to
 
 ## Configuration
 
-### Paths
+### Environment variables
 
-The pipeline resolves paths dynamically at runtime. Override them with environment variables if your layout differs from the default:
-
-| Variable | Default | Description |
+| Variable | Required | Description |
 |---|---|---|
-| `PIPELINE_REPO` | Current working directory | Root of this feedback-loop repository |
-| `PIPELINE_BUILDER` | `../` sibling directory | Root of the target product repository |
+| `PIPELINE_BUILDER` | **Yes** | Absolute path to the target product repository |
+| `PIPELINE_REPO` | No | Override the feedback-loop repo path (defaults to `pwd`) |
 
-Example:
+### Config files
 
-```bash
-export PIPELINE_REPO="/path/to/feedback-loop"
-export PIPELINE_BUILDER="/path/to/your-product"
-```
+Customize these files in `config/` to match your product:
 
-### Thresholds and rules
+| File | Purpose | Must customize? |
+|---|---|---|
+| `engine_graph_overrides.json` | Module dependency graph (roles, feeds, fed_by) | **Yes** |
+| `category_engine_map.json` | Maps finding categories to affected modules | **Yes** |
+| `thresholds.json` | Scoring minimums, retry limits, gate parameters | Recommended |
+| `prohibited_patterns.txt` | Regex patterns rejected by Stage 6 | Optional |
 
-Key configuration files in `config/`:
+### Prompt templates
 
-- **`thresholds.json`** — Scoring minimums, retry limits, and gate parameters for every stage.
-- **`category_engine_map.json`** — Maps finding categories (retrieval, prompting, security, etc.) to affected engines and ports.
-- **`engine_graph_overrides.json`** — Defines the engine dependency graph with roles, feeds, and fed-by relationships.
-- **`prohibited_patterns.txt`** — Regex patterns rejected by Stage 6 (TODO, FIXME, HACK, stubs, etc.).
+The files in `prompts/` contain architecture-specific instructions that Claude uses during analysis and implementation stages. Update them to describe your product's module structure, naming conventions, and architectural constraints.
 
 ## Troubleshooting
 
 | Issue | Fix |
 |---|---|
+| `PIPELINE_BUILDER` not set | `export PIPELINE_BUILDER="/path/to/your-product"` |
 | `[FAIL] License key not found` | Place your key at `~/.aiprd/license-key` |
 | `[FAIL] License invalid` | Verify your key at [ai-architect.tools](https://ai-architect.tools) |
 | Stage 4 fails with "skill not found" | Ensure the `ai-prd-generator` skill is installed |
-| Build failures in Stage 5 | Confirm the target product repo is present and builds (`PIPELINE_BUILDER`) |
+| Build failures in Stage 5 | Confirm the target product repo builds (`swift build` in `$PIPELINE_BUILDER`) |
 | `gh` errors in Stage 10 | Run `gh auth login` to authenticate the GitHub CLI |
+| Health check fails on paths | Verify `PIPELINE_BUILDER` points to a valid git repo with `packages/` |
 
 ## About
 
