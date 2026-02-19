@@ -199,10 +199,90 @@ make install-scheduler        # Install launchd agent (runs at 2 AM)
 make uninstall-scheduler      # Remove the scheduler
 ```
 
+## Findings input format
+
+The pipeline consumes **findings** — structured items describing issues, improvements, or changes to analyze and implement. Findings can come from any source: code analysis tools, draft specs, design reviews, bug reports, or manual entries.
+
+The default input adapter reads [Technical Veil](https://technicalveil.com) markdown reports, but you can feed the pipeline any JSON that matches the schema below.
+
+### Input JSON schema
+
+Place a JSON file at the path expected by Stage 1 (typically `tv_output.json` in the TV directory, or pass `--input` directly to `parse_findings.py`):
+
+```json
+{
+  "source": "your-tool-name",
+  "findings": [
+    {
+      "id": "spec-001",
+      "title": "Short title of the finding or draft spec",
+      "description": "Detailed description of the issue, improvement, or spec. Max 500 chars used by the pipeline.",
+      "source_url": "https://optional-link-to-source",
+      "relevance_category": "api_change",
+      "relevance_score": 0.8,
+      "raw_data": {}
+    }
+  ]
+}
+```
+
+### Required fields per finding
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Unique identifier (used in branch names, file names, PR titles) |
+| `title` | string | Short summary — becomes the PRD title |
+| `description` | string | Detailed context — fed into Stage 2 impact analysis |
+| `relevance_category` | string | Must match a key in `config/category_engine_map.json` |
+| `relevance_score` | float | 0.0 – 1.0 relevance weight (filtered by `thresholds.json` minimum, default 0.5) |
+
+### Optional fields
+
+| Field | Type | Description |
+|---|---|---|
+| `source_url` | string | Link to the original source (included in PRs) |
+| `raw_data` | object | Arbitrary metadata passed through to reports |
+
+### Valid relevance categories
+
+These are the default categories defined in `config/thresholds.json` and mapped to modules in `config/category_engine_map.json`:
+
+`api_change` · `behavior_change` · `dependency_change` · `config_change` · `schema_change` · `performance_change` · `security_change` · `prompting` · `retrieval` · `verification` · `embeddings` · `inference` · `cost_optimization` · `benchmarks`
+
+Add or remove categories by editing both `thresholds.json` (stage_1.relevance_categories) and `category_engine_map.json` (mappings).
+
+### Using draft specs as findings
+
+Findings don't have to come from a code analysis tool. You can use the pipeline to process **draft specs**, **RFCs**, or **improvement proposals** — anything that describes a change to implement. Write each spec as a finding:
+
+```json
+{
+  "source": "draft_specs",
+  "findings": [
+    {
+      "id": "spec-auth-refresh",
+      "title": "Add token refresh to authentication flow",
+      "description": "The current auth flow requires full re-login when tokens expire. Add silent refresh using the refresh_token grant type. Must handle concurrent requests during refresh and queue them until the new token is available.",
+      "relevance_category": "api_change",
+      "relevance_score": 0.9
+    },
+    {
+      "id": "spec-cache-layer",
+      "title": "Introduce response caching for read endpoints",
+      "description": "Add a cache layer for GET /api/v1/resources with TTL-based invalidation. Cache should be per-tenant and respect Authorization headers. Use existing Redis instance.",
+      "relevance_category": "performance_change",
+      "relevance_score": 0.85
+    }
+  ]
+}
+```
+
+Save this file and point Stage 1 at it. The pipeline will score, prioritize, analyze impact, generate PRDs, implement, and deliver PRs for each spec — fully autonomously.
+
 ## Pipeline stages
 
 ### Stage 1 — Parse findings
-Reads Technical Veil output, normalizes findings into a ranked list scored by relevance and cross-engine impact.
+Reads the input JSON, filters findings by relevance category and score threshold, and produces a ranked list for prioritization.
 
 ### Stage 2 — Impact analysis
 Computes a compound impact score across four dimensions: engines affected, propagation depth, contract impact, and test coverage delta. Findings must score above 0.3 and affect at least 2 engines to proceed.
