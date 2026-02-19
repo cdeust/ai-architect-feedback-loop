@@ -331,7 +331,7 @@ print(' '.join(plan.get('affected_engines', [])))
 import json, re, sys
 prd_text = open(sys.argv[1]).read()
 manifest = json.load(open(sys.argv[2]))
-prd_files = set(re.findall(r'packages/AIPRD\S+\.swift', prd_text))
+prd_files = set(re.findall(r'packages/\S+\.\w+', prd_text))
 must_not_change = set(manifest.get("must_not_change", []))
 conflicts = prd_files & must_not_change
 if conflicts:
@@ -359,15 +359,15 @@ PYEOF
         git -C "$BUILDER_DIR" checkout -b "$BRANCH_NAME" 2>/dev/null
     fi
 
-    # Generate build commands from affected engines
-    BUILD_CMDS=""
-    for engine in $AFFECTED_ENGINES; do
-        PKG_PATH=$(python3 -c "import json; print(json.load(open('$ENGINE_GRAPH'))['engines'].get('$engine', {}).get('package_path', ''))" 2>/dev/null || echo "")
-        if [[ -n "$PKG_PATH" ]]; then
-            BUILD_CMDS+="swift build --package-path $BUILDER_DIR/$PKG_PATH"$'\n'
-            BUILD_CMDS+="swift test --package-path $BUILDER_DIR/$PKG_PATH"$'\n'
-        fi
-    done
+    # Generate build commands from project config
+    PROJECT_CONFIG_FILE="$SCRIPT_DIR/../config/project.json"
+    BUILD_CMD_CFG="make build"
+    TEST_CMD_CFG="make test"
+    if [[ -f "$PROJECT_CONFIG_FILE" ]]; then
+        BUILD_CMD_CFG=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG_FILE')).get('build_command', 'make build'))" 2>/dev/null || echo "make build")
+        TEST_CMD_CFG=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG_FILE')).get('test_command', 'make test'))" 2>/dev/null || echo "make test")
+    fi
+    BUILD_CMDS="cd $BUILDER_DIR && $BUILD_CMD_CFG"$'\n'"cd $BUILDER_DIR && $TEST_CMD_CFG"$'\n'
 
     # Read CLAUDE.md from builder repo
     CLAUDE_MD_RULES=""
@@ -518,19 +518,17 @@ PYEOF
         fi
     fi
 
-    # Build verification for affected engines
+    # Build verification using project config
     BUILD_OK=true
     if [[ "$MANIFEST_OK" == "true" ]]; then
-        for engine in $AFFECTED_ENGINES; do
-            PKG_PATH=$(python3 -c "import json; print(json.load(open('$ENGINE_GRAPH'))['engines'].get('$engine', {}).get('package_path', ''))" 2>/dev/null || echo "")
-            if [[ -n "$PKG_PATH" && -f "$BUILDER_DIR/$PKG_PATH/Package.swift" ]]; then
-                if ! swift build --package-path "$BUILDER_DIR/$PKG_PATH" > /dev/null 2>&1; then
-                    log "WARN" "Build failed for $engine"
-                    BUILD_OK=false
-                    break
-                fi
-            fi
-        done
+        local verify_build_cmd="make build"
+        if [[ -f "$SCRIPT_DIR/../config/project.json" ]]; then
+            verify_build_cmd=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/../config/project.json')).get('build_command', 'make build'))" 2>/dev/null || echo "make build")
+        fi
+        if ! (cd "$BUILDER_DIR" && eval "$verify_build_cmd" > /dev/null 2>&1); then
+            log "WARN" "Build verification failed"
+            BUILD_OK=false
+        fi
     fi
 
     # Decision

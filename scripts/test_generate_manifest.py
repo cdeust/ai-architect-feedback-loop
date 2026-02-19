@@ -137,7 +137,7 @@ class TestMustChange(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestMustNotChange(unittest.TestCase):
-    """UT-GM-002: Includes Package.swift for unaffected engines + library + Makefile."""
+    """UT-GM-002: Includes unaffected engine paths + Makefile."""
 
     def test_unaffected_engines_protected(self):
         plan = make_plan(
@@ -146,18 +146,17 @@ class TestMustNotChange(unittest.TestCase):
         )
         manifest = gm.generate(plan, ENGINE_GRAPH)
 
-        # EncryptionEngine is unaffected, its Package.swift should be protected
-        self.assertIn("packages/AIPRDEncryptionEngine/Package.swift",
+        # EncryptionEngine is unaffected, its path should be protected
+        self.assertIn("packages/AIPRDEncryptionEngine",
                        manifest["must_not_change"])
-        # RAGEngine is affected, its Package.swift should NOT be protected
-        self.assertNotIn("packages/AIPRDRAGEngine/Package.swift",
+        # RAGEngine is affected, should NOT be protected
+        self.assertNotIn("packages/AIPRDRAGEngine",
                           manifest["must_not_change"])
 
-    def test_library_and_makefile_always_protected(self):
+    def test_makefile_always_protected(self):
         plan = make_plan(["RAGEngine"], ["packages/AIPRDRAGEngine/Sources/BM25.swift"])
         manifest = gm.generate(plan, ENGINE_GRAPH)
 
-        self.assertIn("library/Package.swift", manifest["must_not_change"])
         self.assertIn("Makefile", manifest["must_not_change"])
 
 
@@ -201,11 +200,11 @@ class TestMinimalPlan(unittest.TestCase):
         # Only 1 file to change
         self.assertEqual(len(manifest["must_change"]), 1)
 
-        # 6 other engines protected + library + Makefile
+        # 6 other engines protected + Makefile
         # SharedUtilities, RAGEngine, MetaPromptingEngine, VerificationEngine,
         # StrategyEngine, OrchestrationEngine = 6 engines
         engine_protected = [p for p in manifest["must_not_change"]
-                           if p.endswith("/Package.swift") and "library" not in p]
+                           if p.startswith("packages/") and p != "Makefile"]
         self.assertEqual(len(engine_protected), 6)
 
 

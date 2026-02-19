@@ -56,10 +56,9 @@ def generate(plan, engine_graph):
                 if path and path not in must_change:
                     must_change.append(path)
 
-    # must_not_change: Package.swift for unaffected engines + library + Makefile
+    # must_not_change: critical config files in unaffected engines
     affected = set(plan.get("affected_engines", []))
     all_engines = set(engine_graph.get("engines", {}).keys())
-    # SharedUtilities may need port changes, don't exclude unless affected
     unaffected = all_engines - affected
 
     must_not_change = []
@@ -67,10 +66,9 @@ def generate(plan, engine_graph):
     for engine in sorted(unaffected):
         pkg_path = engines_data.get(engine, {}).get("package_path", "")
         if pkg_path:
-            must_not_change.append(f"{pkg_path}/Package.swift")
+            must_not_change.append(pkg_path)
 
     # Always protect these
-    must_not_change.append("library/Package.swift")
     must_not_change.append("Makefile")
 
     # allowed_new_files: plan's test files

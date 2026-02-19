@@ -129,8 +129,8 @@ if [[ ! -d "$BUILDER_DIR" ]]; then
     exit 1
 fi
 
-if [[ ! -d "$PACKAGES_DIR/AIPRDSharedUtilities" ]]; then
-    log "ERROR" "packages-dir must contain AIPRDSharedUtilities: $PACKAGES_DIR"
+if [[ ! -d "$PACKAGES_DIR" ]]; then
+    log "ERROR" "Packages directory not found: $PACKAGES_DIR"
     exit 1
 fi
 

@@ -1,30 +1,17 @@
-# Stage 4: Self-Improvement PRD Generation (Dogfood)
+# Stage 4: Self-Improvement PRD Generation
 
 ## Your Role
-You are the AI-PRD Generator generating an upgrade PRD for itself.
+You are generating an upgrade PRD for the target product using the ai-prd-generator skill.
 Context type: **feature** (11 sections, technical depth focus, 3 RAG hops).
-The integration plan below defines exactly which engines, files, and contracts change.
+The integration plan below defines exactly which modules, files, and contracts change.
 
-## Product Architecture (from CLAUDE.md + engine_graph.json)
-The AI-PRD Generator is a Swift library with 9 engine packages following
-strict port/adapter architecture (Clean Architecture with dependency inversion):
+## Product Architecture
+{{ARCHITECTURE_DESCRIPTION}}
 
-| Layer | Package | Role | Dependencies |
-|-------|---------|------|-------------|
-| Domain | AIPRDSharedUtilities | 46 port protocols, entities, DTOs | None |
-| Adapter | AIPRDRAGEngine | Retrieval (BM25, embeddings, context) | SharedUtilities |
-| Adapter | AIPRDStrategyEngine | 15 research-weighted thinking strategies | SharedUtilities |
-| Adapter | AIPRDVerificationEngine | 6 verification algorithms, multi-judge | SharedUtilities |
-| Adapter | AIPRDMetaPromptingEngine | Few-shot, template selection | RAGEngine, SharedUtilities |
-| Adapter | AIPRDVisionEngine | UI component detection (180+ types) | SharedUtilities |
-| Adapter | AIPRDEncryptionEngine | Ed25519 licensing, HMAC trials | SharedUtilities |
-| Adapter | AIPRDAuditFlagEngine | Metadata-only audit scanning | SharedUtilities |
-| Service | AIPRDOrchestrationEngine | Pipeline coordinator, section generation | All engines except Encryption |
+## Module Dependency Graph
+{{ENGINE_GRAPH}}
 
-Dependency rule: source code dependencies point INWARD. Domain defines ports,
-engines implement them, Composition root wires everything.
-
-## PRD Input (from Stage 3 Pipeline)
+## PRD Input (from pipeline)
 {{PRD_INPUT}}
 
 ## SKILL.md Hard Output Rules (ALL 17 — MUST ENFORCE)
@@ -39,11 +26,11 @@ engines implement them, Composition root wires everything.
 9. Uneven SP distribution — reflect real complexity
 10. Verification metrics labeled "projected" with disclaimer
 11. FR traceability — every FR traces to source
-12. Clean Architecture in Technical Spec — ports/adapters, composition root
+12. Clean Architecture in Technical Spec — show module structure and interfaces
 13. Post-generation self-check — verify all 17 rules BLOCKING
 14. Mandatory codebase analysis
 15. Honest verification verdicts (5-level taxonomy)
-16. Code examples use injected ports (ClockPort, not Date())
+16. Code examples use injected interfaces (not framework globals)
 17. Test traceability integrity — matrix matches code
 
 ## Output Instructions
@@ -54,8 +41,7 @@ Generate exactly 4 files in the current directory:
 4. `prd-tests.md` — Test cases with UT-/IT-/E2E- prefixed IDs
 
 The verification report MUST include `**Overall Score:** NN%` line for quality gate parsing.
-The PRD Technical Spec section MUST show port/adapter architecture with real package paths.
-All code examples MUST use ports from SharedUtilities/Domain/Ports/ (not framework types).
+The PRD Technical Spec section MUST show module architecture with real paths.
 
 After writing all 4 files, output a JSON summary on stdout:
 {{PRD_SUMMARY_SCHEMA}}

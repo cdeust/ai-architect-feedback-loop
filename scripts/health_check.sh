@@ -114,37 +114,22 @@ log "INFO" "Health check started — builder: $BUILDER_DIR"
 
 log "INFO" "=== Toolchain checks ==="
 
-check_with_msg "ERROR" "claude CLI" \
-    "claude CLI not found — required for Stages 2-5, 7" \
-    command -v claude
+# Read required tools from project config
+PROJECT_CONFIG="$REPO_DIR/config/project.json"
+REQUIRED_TOOLS="python3 git gh jq claude"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    REQUIRED_TOOLS=$(python3 -c "import json; print(' '.join(json.load(open('$PROJECT_CONFIG')).get('required_tools', ['python3','git','gh','jq','claude'])))" 2>/dev/null || echo "python3 git gh jq claude")
+fi
 
-check_with_msg "ERROR" "gh CLI" \
-    "gh CLI not found — required for Stage 10 PR creation" \
-    command -v gh
+for tool in $REQUIRED_TOOLS; do
+    check_with_msg "ERROR" "$tool" \
+        "$tool not found — required by pipeline" \
+        command -v "$tool"
+done
 
 check_with_msg "ERROR" "gh authenticated" \
     "gh not authenticated — run: gh auth login" \
     gh auth status
-
-check_with_msg "ERROR" "swift" \
-    "swift not found — required for product build verification" \
-    command -v swift
-
-check_with_msg "ERROR" "swiftc" \
-    "swiftc not found — required for product build" \
-    command -v swiftc
-
-check_with_msg "ERROR" "make" \
-    "make not found — required for build-library, test-all, distribute" \
-    command -v make
-
-check_with_msg "ERROR" "python3" \
-    "python3 not found — required for metric extraction and validation" \
-    command -v python3
-
-check_with_msg "ERROR" "jq" \
-    "jq not found — required for JSON processing" \
-    command -v jq
 
 # ─── B. Product State (builder repo health) ──────────────────────────────
 
@@ -201,12 +186,12 @@ check_with_msg "ERROR" "Engine graph exists" \
 
 if [[ -f "$ENGINE_GRAPH" ]]; then
     ENGINE_COUNT=$(python3 -c "import json; print(len(json.load(open('$ENGINE_GRAPH'))['engines']))" 2>/dev/null || echo "0")
-    if [[ "$ENGINE_COUNT" -eq 9 ]]; then
-        log "INFO" "Engine graph has 9 engines — OK"
+    if [[ "$ENGINE_COUNT" -ge 1 ]]; then
+        log "INFO" "Engine graph has $ENGINE_COUNT module(s) — OK"
         CHECKS+=("{\"check\":\"Engine graph engine count\",\"result\":\"OK\",\"level\":\"INFO\"}")
     else
         ERRORS=$((ERRORS + 1))
-        log "ERROR" "Engine graph incomplete — expected 9 engines, got $ENGINE_COUNT"
+        log "ERROR" "Engine graph empty — expected >= 1 module, got $ENGINE_COUNT"
         CHECKS+=("{\"check\":\"Engine graph engine count\",\"result\":\"FAIL\",\"level\":\"ERROR\"}")
     fi
 fi

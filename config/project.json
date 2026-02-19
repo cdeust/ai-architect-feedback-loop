@@ -1,0 +1,15 @@
+{
+  "language": "python",
+  "source_extensions": [".py"],
+  "test_file_patterns": ["**/test_*.py", "**/*_test.py"],
+  "test_dir_name": "tests",
+  "module_prefix": "",
+  "modules_dir": "packages",
+  "domain_module": null,
+  "interface_suffix": null,
+  "build_command": "make build",
+  "test_command": "make test",
+  "deploy_command": null,
+  "required_tools": ["python3", "git", "gh", "jq", "claude"],
+  "contract_extractor": null
+}

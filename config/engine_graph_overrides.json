@@ -1,92 +1,20 @@
 {
-  "description": "Manual semantic relationships between engines. Merged with auto-detected Package.swift dependencies.",
+  "description": "Module dependency graph. Define your modules with roles and relationships.",
   "engines": {
-    "SharedUtilities": {
-      "role": "common_infrastructure",
-      "feeds": [
-        "RAGEngine",
-        "VerificationEngine",
-        "OrchestrationEngine",
-        "MetaPromptingEngine",
-        "StrategyEngine",
-        "EncryptionEngine",
-        "VisionEngine",
-        "VisionEngineApple"
-      ],
+    "core": {
+      "role": "shared_infrastructure",
+      "feeds": ["api", "worker"],
       "fed_by": []
     },
-    "RAGEngine": {
-      "role": "retrieval",
-      "feeds": [
-        "OrchestrationEngine"
-      ],
-      "fed_by": [
-        "SharedUtilities"
-      ]
-    },
-    "VerificationEngine": {
-      "role": "verification",
-      "feeds": [
-        "OrchestrationEngine"
-      ],
-      "fed_by": [
-        "SharedUtilities"
-      ]
-    },
-    "OrchestrationEngine": {
-      "role": "orchestration",
+    "api": {
+      "role": "api_layer",
       "feeds": [],
-      "fed_by": [
-        "SharedUtilities",
-        "RAGEngine",
-        "VerificationEngine",
-        "MetaPromptingEngine",
-        "StrategyEngine",
-        "VisionEngine"
-      ]
+      "fed_by": ["core"]
     },
-    "MetaPromptingEngine": {
-      "role": "prompting",
-      "feeds": [
-        "OrchestrationEngine"
-      ],
-      "fed_by": [
-        "SharedUtilities"
-      ]
-    },
-    "StrategyEngine": {
-      "role": "strategy",
-      "feeds": [
-        "OrchestrationEngine"
-      ],
-      "fed_by": [
-        "SharedUtilities"
-      ]
-    },
-    "EncryptionEngine": {
-      "role": "encryption",
+    "worker": {
+      "role": "background_processing",
       "feeds": [],
-      "fed_by": [
-        "SharedUtilities"
-      ]
-    },
-    "VisionEngine": {
-      "role": "vision",
-      "feeds": [
-        "OrchestrationEngine",
-        "VisionEngineApple"
-      ],
-      "fed_by": [
-        "SharedUtilities"
-      ]
-    },
-    "VisionEngineApple": {
-      "role": "vision",
-      "feeds": [],
-      "fed_by": [
-        "SharedUtilities",
-        "VisionEngine"
-      ]
+      "fed_by": ["core"]
     }
   }
 }

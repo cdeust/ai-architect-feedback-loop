@@ -101,7 +101,7 @@ def resolve_category(finding_category, category_map):
 # ---------------------------------------------------------------------------
 
 def compose(impact_report, integration_plan, manifest, contracts_md,
-            engine_graph, category_map):
+            engine_graph, category_map, architecture_description=""):
     """Compose the full PRD input markdown from pipeline artifacts."""
     finding_id = impact_report.get("finding_id", "unknown")
     finding_title = impact_report.get("finding_title",
@@ -224,33 +224,23 @@ def compose(impact_report, integration_plan, manifest, contracts_md,
         sections.append("- No contract changes recorded")
     sections.append("")
 
-    # Engine Contracts
-    sections.append("## Engine Contracts (Current Swift Protocols)")
+    # Module Contracts
+    sections.append("## Module Interfaces / Contracts")
     if contracts_md:
         sections.append(contracts_md)
     else:
         sections.append("No contracts extracted")
     sections.append("")
 
-    # Product Architecture Rules
+    # Product Architecture Rules (from architecture.md if available)
     sections.append("## Product Architecture Rules")
-    sections.append("- SharedUtilities = domain layer (zero external deps, pure Swift)")
-    sections.append("- Engine packages = adapters (depend only on SharedUtilities)")
-    sections.append("- OrchestrationEngine = service layer (depends on SharedUtilities + engine packages)")
-    sections.append("- New capabilities = new methods on existing ports in SharedUtilities/Domain/Ports/")
-    sections.append("- Implementations go in relevant engine adapter package")
-    sections.append("- Composition root (library/) performs ALL concrete wiring")
-    sections.append("- NO @_exported import, NO typealias, NO casting to Any")
-    sections.append("")
-
-    # Product Pipeline Description
-    sections.append("## Product PRD Generation Pipeline")
-    sections.append("1. EnrichedContextBuilder gathers context (RAG + reasoning + vision)")
-    sections.append("2. SectionGeneration produces sections in dependency waves")
-    sections.append("3. ThinkingOrchestratorUseCase selects from 15 research-weighted strategies")
-    sections.append("4. UnifiedVerificationEngine verifies each section (6 algorithms)")
-    sections.append("5. HardOutputRuleEnforcer enforces 17 deterministic quality rules")
-    sections.append("6. BusinessKPIsFactory computes 8 metric systems")
+    if architecture_description:
+        sections.append(architecture_description)
+    else:
+        sections.append("- Follow the project's CLAUDE.md and architecture documentation")
+        sections.append("- Respect module boundaries and dependency graph")
+        sections.append("- New capabilities extend existing interfaces")
+        sections.append("- Implementations go in the relevant module")
 
     return "\n".join(sections)
 
@@ -301,11 +291,18 @@ def main(argv=None):
         "--category-map", required=True,
         help="Path to category_engine_map.json"
     )
+    parser.add_argument(
+        "--architecture", default=None,
+        help="Path to architecture.md (optional)"
+    )
 
     args = parser.parse_args(argv)
 
     engine_graph = load_json(args.engine_graph)
     category_map = load_json(args.category_map)
+    architecture_description = ""
+    if args.architecture and os.path.isfile(args.architecture):
+        architecture_description = load_text(args.architecture)
 
     if args.batch_dir:
         # Batch mode: process all accepted findings
@@ -337,7 +334,8 @@ def main(argv=None):
             contracts_md = load_text(contracts_path)
 
             md = compose(impact_report, integration_plan, manifest,
-                        contracts_md, engine_graph, category_map)
+                        contracts_md, engine_graph, category_map,
+                        architecture_description)
 
             output_path = os.path.join(batch_dir, f"prd_input_{finding_id}.md")
             with open(output_path, "w") as f:
@@ -383,7 +381,8 @@ def main(argv=None):
         contracts_md = load_text(args.contracts_md)
 
     md = compose(impact_report, integration_plan, manifest,
-                contracts_md, engine_graph, category_map)
+                contracts_md, engine_graph, category_map,
+                architecture_description)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
     with open(args.output, "w") as f:

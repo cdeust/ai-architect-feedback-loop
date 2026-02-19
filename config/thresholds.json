@@ -27,12 +27,7 @@
   },
   "stage_6": {
     "prohibited_patterns_file": "config/prohibited_patterns.txt",
-    "orphan_detection_extensions": [
-      ".swift",
-      ".md",
-      ".json",
-      ".txt"
-    ],
+    "orphan_detection_extensions": "from_project_config",
     "orphan_detection_exclude_dirs": [
       ".build",
       ".git",

@@ -12,7 +12,7 @@ Print a status line after each step: `[PASS] Step X.Y: description` or `[FAIL] S
 2. **No self-correction loops**: If you realize a value is wrong after writing, do NOT go back and fix it. The validators will catch errors — let them reject and you retry.
 3. **Normalize before writing**: All scoring values must be in 0.0–1.0 range. Compute the normalized values, verify the formula, then write once.
 4. **Validator exit codes are NOT errors**: All validator scripts (`validate_impact_report.py`, `validate_integration_plan.py`, `validate_prd_output.py`) exit with code 1 on REJECTED. This is **normal** — it means validation ran successfully but the content didn't pass. Always append `; true` to validator bash commands so exit code 1 doesn't block execution. After running a validator, ALWAYS read the output JSON file to check the result and failed checks. A REJECTED result means **retry**, never skip.
-5. **NEVER run Bash in the background**: All bash commands MUST run in the foreground (main thread). Do NOT use `run_in_background: true`. Background tasks stall the pipeline because you cannot proceed until they complete — running them in background just adds polling overhead and wasted time. Run everything synchronously. Use `timeout: 600000` (10 minutes) for long-running commands like `swift test` and stage scripts.
+5. **NEVER run Bash in the background**: All bash commands MUST run in the foreground (main thread). Do NOT use `run_in_background: true`. Background tasks stall the pipeline because you cannot proceed until they complete — running them in background just adds polling overhead and wasted time. Run everything synchronously. Use `timeout: 600000` (10 minutes) for long-running commands like test suites and stage scripts.
 6. **Use TaskCreate for progress tracking**: At the start of Phase 2, create a task list with one task per finding. Update each task to `in_progress` when you start processing it, and `completed` when done. This keeps the pipeline organized and shows progress.
 
 ## Paths
@@ -223,7 +223,7 @@ Response format:
   "modifications": [
     {
       "engine": "EngineA",
-      "files": [{"path": "packages/AIPRDEngineA/Sources/...", "action": "modify", "description": "what"}],
+      "files": [{"path": "packages/module_a/src/...", "action": "modify", "description": "what"}],
       "contract_changes": [{"protocol": "Name", "change": "add method", "description": "what"}]
     }
   ],
@@ -303,7 +303,7 @@ Record the derived scope as `FINDING_SCOPE` for this finding.
 
 When the skill loads, jump directly to **Phase 3: PRD Generation** using context type "feature" (11 sections). Follow the skill's 17 hard output rules and self-check normally. Pass the derived `FINDING_SCOPE` as the scope context.
 
-Pre-answered context: Scope=`FINDING_SCOPE` (derived above) with details from integration plan, Users=internal, Data=engine contracts, Integrations=engine graph, Non-functional=no regression, Technical=Swift port/adapter, Codebase=follow CLAUDE.md, Compliance=N/A.
+Pre-answered context: Scope=`FINDING_SCOPE` (derived above) with details from integration plan, Users=internal, Data=module contracts, Integrations=module dependency graph, Non-functional=no regression, Technical=follow CLAUDE.md, Codebase=follow CLAUDE.md, Compliance=N/A.
 
 **Invoke skill**: Call `Skill("ai-prd-generator:generate-prd")` with the PRD input content as argument.
 
@@ -359,24 +359,23 @@ Read descriptor + prompt. Then **implement directly**:
 2. Create feature branch from run branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
 3. Read the PRD + integration plan
 4. For each modification in the plan: Read the file, Edit it
-5. Build each affected package. **Special packages require different commands:**
-
-   | Package | Build command |
-   |---------|--------------|
-   | VisionEngineApple | `swift build --package-path "<BUILDER>/packages/AIPRDVisionEngineApple" -Xswiftc -plugin-path -Xswiftc /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins` |
-   | VisionEngine | `swift build --package-path "<BUILDER>/packages/AIPRDVisionEngine"` (standard, but test with `make -C "<BUILDER>" test-vision` if standard fails) |
-   | AuditFlagEngine | `swift build --package-path "<BUILDER>/packages/AIPRDAuditFlagEngine"` (has YAML resources in Sources/Resources/Rules/) |
-   | All other packages | `swift build --package-path "<BUILDER>/packages/AIPRD<Engine>"` |
-
+5. Build: Read `build_command` from `<CONFIG>/project.json`, run it in BUILDER:
+   ```bash
+   BUILD_CMD=$(python3 -c "import json; print(json.load(open('<CONFIG>/project.json')).get('build_command', 'make build'))")
+   cd "<BUILDER>" && eval "$BUILD_CMD"
+   ```
    - **If build fails: read the error output, fix the code, rebuild. Repeat until build succeeds.**
    - Do NOT move on, do NOT skip. Fix the build errors in-place on the feature branch.
 
-6. Test packages that have Tests/ dirs: `swift test --package-path "<BUILDER>/packages/AIPRD<Engine>"`
-   - **Skip testing for VisionEngineApple** (requires Xcode plugin flags + FoundationModels runtime)
+6. Test: Read `test_command` from `<CONFIG>/project.json`, run it in BUILDER:
+   ```bash
+   TEST_CMD=$(python3 -c "import json; print(json.load(open('<CONFIG>/project.json')).get('test_command', 'make test'))")
+   cd "<BUILDER>" && eval "$TEST_CMD"
+   ```
    - **If tests fail: read the error output, fix the code or tests, re-run. Repeat until tests pass.**
    - Do NOT move on, do NOT skip. Fix test failures in-place on the feature branch.
 
-7. Only after ALL affected packages build AND pass tests:
+7. Only after build AND tests pass:
    Commit: `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "pipeline: <FID> — <description>"`
 8. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
 
@@ -416,7 +415,7 @@ rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SC
 ```
 
 Read descriptor + prompt. Verify:
-1. Get diff: `git -C "<BUILDER>" diff "pipeline/run-<RUN_TS>...pipeline/improvement-<FID>" -- packages/ library/`
+1. Get diff: `git -C "<BUILDER>" diff "pipeline/run-<RUN_TS>...pipeline/improvement-<FID>"`
 2. Compare each FR/AC in PRD vs implementation
 3. Check cross-engine touchpoints
 4. Check prohibited patterns

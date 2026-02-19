@@ -233,7 +233,9 @@ class TestRejectedFakeProtocol(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestRejectedPortLocation(unittest.TestCase):
-    """UT-VIP-007: Port protocol change not accompanied by SharedUtilities modification."""
+    """UT-VIP-007: Port protocol change not accompanied by domain module modification."""
+
+    PORT_CONFIG = {"domain_module": "SharedUtilities", "interface_suffix": "Port"}
 
     def test_port_without_su_rejected(self):
         plan = make_valid_plan()
@@ -248,7 +250,7 @@ class TestRejectedPortLocation(unittest.TestCase):
         # But keep affected_engines consistent
         plan["affected_engines"] = ["RAGEngine", "MetaPromptingEngine", "OrchestrationEngine"]
 
-        result, checks = vip.validate(plan)
+        result, checks = vip.validate(plan, project_config=self.PORT_CONFIG)
         check = next(c for c in checks if c["check"] == "port_location")
         self.assertEqual(check["result"], "FAIL")
 
@@ -267,7 +269,7 @@ class TestRejectedPortLocation(unittest.TestCase):
             ],
         })
 
-        _, checks = vip.validate(plan)
+        _, checks = vip.validate(plan, project_config=self.PORT_CONFIG)
         check = next(c for c in checks if c["check"] == "port_location")
         self.assertEqual(check["result"], "PASS")
 

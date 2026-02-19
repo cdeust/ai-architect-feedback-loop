@@ -229,14 +229,24 @@ class TestCompose(unittest.TestCase):
         self.assertIn("0.87", md)
 
     def test_architecture_guidelines(self):
-        """UT-CPI-013: output includes port/adapter rules."""
+        """UT-CPI-013: output includes architecture rules."""
         md = cpi.compose(
             make_impact_report(), make_integration_plan(), make_manifest(),
             "", ENGINE_GRAPH, CATEGORY_MAP
         )
-        self.assertIn("SharedUtilities = domain layer", md)
-        self.assertIn("NO @_exported import", md)
-        self.assertIn("EnrichedContextBuilder", md)
+        # Without architecture_description, should have generic guidelines
+        self.assertIn("Product Architecture Rules", md)
+        self.assertIn("module boundaries", md)
+
+    def test_architecture_description_injected(self):
+        """UT-CPI-013b: architecture_description is injected into output."""
+        arch = "## Hexagonal Architecture\n- Ports define interfaces"
+        md = cpi.compose(
+            make_impact_report(), make_integration_plan(), make_manifest(),
+            "", ENGINE_GRAPH, CATEGORY_MAP, architecture_description=arch
+        )
+        self.assertIn("Hexagonal Architecture", md)
+        self.assertIn("Ports define interfaces", md)
 
     def test_unknown_engine_warning(self):
         """UT-CPI-014: unknown engine → no crash."""

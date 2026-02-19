@@ -16,7 +16,7 @@ Validation rules:
   7. Quality threshold (>= config threshold)
   8. Engine references (PRD mentions affected engines)
   9. Test file non-empty (>= 1 test ID)
-  10. Port/adapter in tech spec
+  10. Architecture references in tech spec
 
 Usage:
     python3 scripts/validate_prd_output.py \
@@ -203,11 +203,11 @@ def check_test_ids(prd_dir):
             "reason": f"{total} test IDs found"}
 
 
-def check_port_adapter_in_tech_spec(prd_dir):
-    """Rule 10: Technical Spec section mentions port/adapter/protocol."""
+def check_architecture_in_tech_spec(prd_dir):
+    """Rule 10: Technical Spec section mentions architecture terms."""
     prd_text = load_text(os.path.join(prd_dir, "prd.md"))
     if not prd_text:
-        return {"check": "port_adapter_in_tech_spec", "result": "FAIL",
+        return {"check": "architecture_in_tech_spec", "result": "FAIL",
                 "reason": "prd.md is empty or missing"}
 
     # Find the Technical Spec section (usually section 5 or 6)
@@ -223,14 +223,16 @@ def check_port_adapter_in_tech_spec(prd_dir):
     else:
         text_to_check = tech_spec_match.group(1)
 
-    terms = ["port", "adapter", "protocol"]
+    # Check for any common architecture terms (not just port/adapter)
+    terms = ["module", "interface", "service", "component", "layer",
+             "port", "adapter", "protocol", "api", "contract"]
     found = [t for t in terms if t.lower() in text_to_check.lower()]
 
     if not found:
-        return {"check": "port_adapter_in_tech_spec", "result": "FAIL",
-                "reason": "Technical Spec missing port/adapter/protocol references (SKILL.md Rule 12)"}
-    return {"check": "port_adapter_in_tech_spec", "result": "PASS",
-            "reason": f"Found: {', '.join(found)}"}
+        return {"check": "architecture_in_tech_spec", "result": "FAIL",
+                "reason": "Technical Spec missing architecture references"}
+    return {"check": "architecture_in_tech_spec", "result": "PASS",
+            "reason": f"Found: {', '.join(found[:5])}"}
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +255,7 @@ def validate(prd_dir, integration_plan, engine_graph, metrics, config):
         check_quality_threshold(metrics, threshold),
         check_engine_references(prd_dir, affected_engines, engine_graph),
         check_test_ids(prd_dir),
-        check_port_adapter_in_tech_spec(prd_dir),
+        check_architecture_in_tech_spec(prd_dir),
     ]
 
     failures = [c for c in checks if c["result"] == "FAIL"]

@@ -27,7 +27,7 @@ SCRIPTS_DIR := scripts
 RUNS_DIR := runs
 LOGS_DIR := logs
 BENCHMARKS_DIR := benchmarks
-TV_DIR := $(HOME)/Downloads/TechnicalVeil
+TV_DIR ?= $(HOME)/Downloads/TechnicalVeil
 
 # Timestamp for pipeline runs
 RUN_TS := $(shell date +%Y%m%d-%H%M%S)
@@ -222,7 +222,7 @@ uninstall-scheduler: ## Remove nightly pipeline scheduler
 # ============================================================================
 
 .PHONY: update-engine-graph
-update-engine-graph: ## Regenerate engine dependency graph from Package.swift + overrides
+update-engine-graph: ## Regenerate engine dependency graph from package manifests + overrides
 	@echo "Updating engine dependency graph..."
 	@python3 $(SCRIPTS_DIR)/generate_engine_graph.py \
 		--packages-dir $(BUILDER_DIR)/packages \
@@ -270,8 +270,8 @@ pipeline-health: ## Validate config files, scripts, and benchmarks
 	@python3 -c "import re; [re.compile(l.strip()) for l in open('$(CONFIG_DIR)/prohibited_patterns.txt') if l.strip() and not l.startswith('#')]" \
 		&& echo "  prohibited_patterns.txt — all valid regex" \
 		|| { echo "  prohibited_patterns.txt — INVALID REGEX"; exit 1; }
-	@python3 -c "import json; d=json.load(open('$(CONFIG_DIR)/engine_graph_overrides.json')); assert len(d['engines']) == 9, f\"Expected 9 engines, got {len(d['engines'])}\"" \
-		&& echo "  engine_graph_overrides.json — 9 engines OK" \
+	@python3 -c "import json; d=json.load(open('$(CONFIG_DIR)/engine_graph_overrides.json')); assert len(d['engines']) >= 1, f\"Expected >= 1 module, got {len(d['engines'])}\"" \
+		&& echo "  engine_graph_overrides.json — $$(python3 -c "import json; print(len(json.load(open('$(CONFIG_DIR)/engine_graph_overrides.json'))['engines']))") modules OK" \
 		|| { echo "  engine_graph_overrides.json — INVALID"; exit 1; }
 	@echo ""
 	@echo "Scripts validation:"
@@ -283,7 +283,7 @@ pipeline-health: ## Validate config files, scripts, and benchmarks
 			exit 1; \
 		fi; \
 	done
-	@for pyfile in extract_prd_metrics.py prioritize_findings.py extract_contracts.py validate_impact_report.py validate_integration_plan.py generate_manifest.py compose_prd_input.py validate_prd_output.py compose_pr.py compose_improvement_report.py; do \
+	@for pyfile in extract_prd_metrics.py prioritize_findings.py extract_contracts.py validate_impact_report.py validate_integration_plan.py generate_manifest.py compose_prd_input.py validate_prd_output.py compose_pr.py compose_improvement_report.py load_project_config.py; do \
 		if [ -f "$(SCRIPTS_DIR)/$$pyfile" ]; then \
 			echo "  $$pyfile — exists"; \
 		else \
@@ -303,16 +303,16 @@ pipeline-health: ## Validate config files, scripts, and benchmarks
 	done
 	@echo ""
 	@echo "Category-engine mapping:"
-	@python3 -c "import json; d=json.load(open('$(CONFIG_DIR)/category_engine_map.json')); assert len(d['mappings']) >= 10, f\"Expected >=10 mappings, got {len(d['mappings'])}\"" \
-		&& echo "  category_engine_map.json — valid (>= 10 mappings)" \
+	@python3 -c "import json; d=json.load(open('$(CONFIG_DIR)/category_engine_map.json')); assert len(d['mappings']) >= 1, f\"Expected >= 1 mapping, got {len(d['mappings'])}\"" \
+		&& echo "  category_engine_map.json — valid ($$(python3 -c "import json; print(len(json.load(open('$(CONFIG_DIR)/category_engine_map.json'))['mappings']))") mappings)" \
 		|| { echo "  category_engine_map.json — INVALID"; exit 1; }
 	@echo ""
 	@echo "Benchmark inputs:"
 	@INPUT_COUNT=$$(ls -1 $(BENCHMARKS_DIR)/inputs/*.json 2>/dev/null | wc -l | tr -d ' '); \
-	if [ "$$INPUT_COUNT" -ge 6 ]; then \
-		echo "  $$INPUT_COUNT benchmark inputs — OK (>= 6)"; \
+	if [ "$$INPUT_COUNT" -ge 1 ]; then \
+		echo "  $$INPUT_COUNT benchmark inputs — OK (>= 1)"; \
 	else \
-		echo "  $$INPUT_COUNT benchmark inputs — INSUFFICIENT (need >= 6)"; \
+		echo "  0 benchmark inputs — INSUFFICIENT (need >= 1)"; \
 		exit 1; \
 	fi
 	@python3 -c "import json,sys,os;d='$(BENCHMARKS_DIR)/inputs';e=[f+': missing '+k for f in sorted(os.listdir(d)) if f.endswith('.json') for k in['context','title','description','requirements','expected']if k not in json.load(open(os.path.join(d,f)))];print('\n'.join('  '+x for x in e))or sys.exit(1)if e else print('  All inputs have required fields')" \

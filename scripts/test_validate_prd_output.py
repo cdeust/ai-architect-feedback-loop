@@ -283,10 +283,16 @@ class TestValidatePrdOutput(unittest.TestCase):
             test_check = next(c for c in checks if c["check"] == "test_ids")
             self.assertEqual(test_check["result"], "FAIL")
 
-    def test_no_port_adapter_in_tech_spec(self):
-        """UT-VPO-009: tech spec missing architecture terms → REJECTED."""
+    def test_no_architecture_in_tech_spec(self):
+        """UT-VPO-009: tech spec missing all architecture terms → REJECTED."""
         import re
-        prd_no_arch = re.sub(r'[Pp]ort', 'gateway', re.sub(r'[Pp]rotocol', 'interface', re.sub(r'[Aa]dapter', 'component', VALID_PRD)))
+        # Replace ALL architecture terms to trigger failure
+        prd_no_arch = VALID_PRD
+        for term in ["module", "interface", "service", "component", "layer",
+                      "port", "adapter", "protocol", "api", "contract",
+                      "Module", "Interface", "Service", "Component", "Layer",
+                      "Port", "Adapter", "Protocol", "API", "Contract"]:
+            prd_no_arch = prd_no_arch.replace(term, "thing")
         with tempfile.TemporaryDirectory() as tmpdir:
             prd_dir = create_prd_dir(tmpdir, prd=prd_no_arch)
             metrics = make_metrics(0.90)
@@ -295,7 +301,7 @@ class TestValidatePrdOutput(unittest.TestCase):
                 prd_dir, INTEGRATION_PLAN, ENGINE_GRAPH, metrics, CONFIG
             )
             self.assertEqual(result, "REJECTED")
-            arch_check = next(c for c in checks if c["check"] == "port_adapter_in_tech_spec")
+            arch_check = next(c for c in checks if c["check"] == "architecture_in_tech_spec")
             self.assertEqual(arch_check["result"], "FAIL")
 
     def test_score_exactly_threshold(self):

@@ -188,6 +188,20 @@ def create_synthetic_packages(tmpdir):
     return packages_dir
 
 
+def create_swift_project_config(tmpdir):
+    """Create a project.json for Swift/AIPRD testing."""
+    config = {
+        "language": "swift",
+        "module_prefix": "AIPRD",
+        "modules_dir": "packages",
+        "source_extensions": [".swift"],
+    }
+    path = os.path.join(tmpdir, "project.json")
+    with open(path, "w") as f:
+        json.dump(config, f)
+    return path
+
+
 def create_overrides(tmpdir):
     """Create a sample overrides file matching the real project structure."""
     overrides = {
@@ -223,14 +237,14 @@ class TestPackageParsing(unittest.TestCase):
         self.packages_dir = create_synthetic_packages(self.tmpdir)
 
     def test_discovers_all_9_packages(self):
-        files = gen.discover_packages(self.packages_dir)
-        self.assertEqual(len(files), 9)
+        dirs = gen.discover_packages_generic(self.packages_dir, "AIPRD")
+        self.assertEqual(len(dirs), 9)
 
     def test_parses_package_name(self):
         filepath = os.path.join(
             self.packages_dir, "AIPRDSharedUtilities", "Package.swift"
         )
-        name, deps = gen.parse_package_swift(filepath)
+        name, deps = gen.parse_swift_package(filepath, "AIPRD")
         self.assertEqual(name, "AIPRDSharedUtilities")
         self.assertEqual(deps, [])
 
@@ -238,7 +252,7 @@ class TestPackageParsing(unittest.TestCase):
         filepath = os.path.join(
             self.packages_dir, "AIPRDOrchestrationEngine", "Package.swift"
         )
-        name, deps = gen.parse_package_swift(filepath)
+        name, deps = gen.parse_swift_package(filepath, "AIPRD")
         self.assertEqual(name, "AIPRDOrchestrationEngine")
         self.assertEqual(sorted(deps), [
             "AIPRDMetaPromptingEngine",
@@ -252,13 +266,13 @@ class TestPackageParsing(unittest.TestCase):
         filepath = os.path.join(
             self.packages_dir, "AIPRDVisionEngine", "Package.swift"
         )
-        name, deps = gen.parse_package_swift(filepath)
+        name, deps = gen.parse_swift_package(filepath, "AIPRD")
         self.assertEqual(name, "AIPRDVisionEngine")
         # Only local dep, URL dep (aws-sdk-swift) excluded
         self.assertEqual(deps, ["AIPRDSharedUtilities"])
 
     def test_build_graph_all_engines(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         self.assertEqual(len(engines), 9)
         expected_names = {
             "SharedUtilities", "RAGEngine", "VerificationEngine",
@@ -268,17 +282,17 @@ class TestPackageParsing(unittest.TestCase):
         self.assertEqual(set(engines.keys()), expected_names)
 
     def test_shared_utilities_has_no_deps(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         self.assertEqual(engines["SharedUtilities"]["depends_on"], [])
 
     def test_shared_utilities_depended_by_all(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         # Every engine except SharedUtilities depends on it
         depended_by = engines["SharedUtilities"]["depended_by"]
         self.assertEqual(len(depended_by), 8)
 
     def test_orchestration_depends_on_5(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         deps = engines["OrchestrationEngine"]["depends_on"]
         self.assertEqual(sorted(deps), [
             "MetaPromptingEngine", "RAGEngine", "SharedUtilities",
@@ -286,17 +300,17 @@ class TestPackageParsing(unittest.TestCase):
         ])
 
     def test_meta_prompting_depends_on_shared_and_rag(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         deps = engines["MetaPromptingEngine"]["depends_on"]
         self.assertEqual(sorted(deps), ["RAGEngine", "SharedUtilities"])
 
     def test_vision_engine_apple_depends_on_shared_and_vision(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         deps = engines["VisionEngineApple"]["depends_on"]
         self.assertEqual(sorted(deps), ["SharedUtilities", "VisionEngine"])
 
     def test_edge_count_is_14(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         edge_count = sum(len(d["depends_on"]) for d in engines.values())
         self.assertEqual(edge_count, 14)
 
@@ -313,7 +327,7 @@ class TestOverrideMerging(unittest.TestCase):
         self.packages_dir = create_synthetic_packages(self.tmpdir)
 
     def test_merge_adds_feeds_and_role(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         overrides = {
             "SharedUtilities": {
                 "role": "common_infrastructure",
@@ -328,7 +342,7 @@ class TestOverrideMerging(unittest.TestCase):
         self.assertEqual(su["fed_by"], [])
 
     def test_merge_preserves_depends_on(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         overrides = {
             "OrchestrationEngine": {
                 "role": "orchestration",
@@ -344,7 +358,7 @@ class TestOverrideMerging(unittest.TestCase):
         self.assertEqual(oe["role"], "orchestration")
 
     def test_all_engines_have_feeds_fed_by_role_after_merge(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         engines = gen.merge_overrides(engines, {})
         for name, data in engines.items():
             self.assertIn("feeds", data, f"{name} missing feeds")
@@ -362,7 +376,7 @@ class TestOverrideMerging(unittest.TestCase):
         self.assertEqual(overrides, {})
 
     def test_override_for_unknown_engine_adds_entry(self):
-        engines = gen.build_graph(self.packages_dir)
+        engines = gen.build_graph(self.packages_dir, language="swift", module_prefix="AIPRD")
         overrides = {
             "PromptEngine": {
                 "role": "prompting",
@@ -423,7 +437,7 @@ class TestCycleDetection(unittest.TestCase):
     def test_no_cycles_in_real_package_graph(self):
         tmpdir = tempfile.mkdtemp()
         packages_dir = create_synthetic_packages(tmpdir)
-        engines = gen.build_graph(packages_dir)
+        engines = gen.build_graph(packages_dir, language="swift", module_prefix="AIPRD")
         cycles = gen.detect_cycles(engines)
         self.assertEqual(len(cycles), 0)
 
@@ -450,11 +464,13 @@ let package = Package(
             with open(os.path.join(pkg_dir, "Package.swift"), "w") as f:
                 f.write(content)
 
+        config_path = create_swift_project_config(tmpdir)
         output_path = os.path.join(tmpdir, "graph.json")
         script = os.path.join(os.path.dirname(__file__), "generate_engine_graph.py")
         result = subprocess.run(
             [sys.executable, script,
              "--packages-dir", packages_dir,
+             "--project-config", config_path,
              "--output", output_path],
             capture_output=True, text=True,
         )
@@ -473,6 +489,7 @@ class TestOutputSchema(unittest.TestCase):
         self.tmpdir = tempfile.mkdtemp()
         self.packages_dir = create_synthetic_packages(self.tmpdir)
         self.overrides_path = create_overrides(self.tmpdir)
+        self.config_path = create_swift_project_config(self.tmpdir)
         self.output_path = os.path.join(self.tmpdir, "engine_graph.json")
 
     def _generate(self):
@@ -480,6 +497,7 @@ class TestOutputSchema(unittest.TestCase):
         gen.main([
             "--packages-dir", self.packages_dir,
             "--overrides", self.overrides_path,
+            "--project-config", self.config_path,
             "--output", self.output_path,
         ])
         with open(self.output_path) as f:
@@ -492,11 +510,11 @@ class TestOutputSchema(unittest.TestCase):
 
     def test_generator_version(self):
         data = self._generate()
-        self.assertEqual(data["generator_version"], "1.0")
+        self.assertEqual(data["generator_version"], "2.0")
 
     def test_source_value(self):
         data = self._generate()
-        self.assertEqual(data["source"], "Package.swift + overrides")
+        self.assertEqual(data["source"], "swift manifests + overrides")
 
     def test_stats_keys(self):
         data = self._generate()
@@ -544,9 +562,10 @@ class TestUtilities(unittest.TestCase):
     """Test helper functions."""
 
     def test_strip_prefix(self):
-        self.assertEqual(gen.strip_prefix("AIPRDSharedUtilities"), "SharedUtilities")
-        self.assertEqual(gen.strip_prefix("AIPRDRAGEngine"), "RAGEngine")
-        self.assertEqual(gen.strip_prefix("PlainName"), "PlainName")
+        self.assertEqual(gen.strip_prefix("AIPRDSharedUtilities", "AIPRD"), "SharedUtilities")
+        self.assertEqual(gen.strip_prefix("AIPRDRAGEngine", "AIPRD"), "RAGEngine")
+        self.assertEqual(gen.strip_prefix("PlainName", "AIPRD"), "PlainName")
+        self.assertEqual(gen.strip_prefix("PlainName", ""), "PlainName")
 
     def test_compute_max_depth_empty(self):
         self.assertEqual(gen.compute_max_depth({}), 0)

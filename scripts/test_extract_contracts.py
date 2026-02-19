@@ -264,13 +264,18 @@ class TestEngineFilter(unittest.TestCase):
         create_minimal_packages(self.tmpdir)
 
     def test_filter_single_engine(self):
-        data, _ = ec.extract_all(self.tmpdir, engine_filter=["RAGEngine"])
+        data, _ = ec.extract_all(self.tmpdir, engine_filter=["RAGEngine"],
+                                 language="swift", module_prefix="AIPRD",
+                                 source_extensions=[".swift"])
         self.assertIn("RAGEngine", data)
         self.assertNotIn("VerificationEngine", data)
         self.assertNotIn("SharedUtilities", data)
 
     def test_filter_includes_shared(self):
-        data, _ = ec.extract_all(self.tmpdir, engine_filter=["SharedUtilities"])
+        data, _ = ec.extract_all(self.tmpdir, engine_filter=["SharedUtilities"],
+                                 language="swift", module_prefix="AIPRD",
+                                 source_extensions=[".swift"],
+                                 domain_module="SharedUtilities")
         self.assertIn("SharedUtilities", data)
         self.assertNotIn("RAGEngine", data)
 
@@ -287,14 +292,20 @@ class TestMarkdownFormat(unittest.TestCase):
         create_minimal_packages(self.tmpdir)
 
     def test_has_engine_headers(self):
-        data, _ = ec.extract_all(self.tmpdir)
-        md = ec.format_markdown(data)
+        data, _ = ec.extract_all(self.tmpdir, language="swift",
+                                 module_prefix="AIPRD",
+                                 source_extensions=[".swift"],
+                                 domain_module="SharedUtilities")
+        md = ec.format_markdown(data, "swift")
         self.assertIn("## SharedUtilities", md)
         self.assertIn("## RAGEngine", md)
 
     def test_has_code_blocks(self):
-        data, _ = ec.extract_all(self.tmpdir)
-        md = ec.format_markdown(data)
+        data, _ = ec.extract_all(self.tmpdir, language="swift",
+                                 module_prefix="AIPRD",
+                                 source_extensions=[".swift"],
+                                 domain_module="SharedUtilities")
+        md = ec.format_markdown(data, "swift")
         self.assertIn("```swift", md)
 
 
@@ -305,12 +316,17 @@ class TestMarkdownFormat(unittest.TestCase):
 class TestJsonFormat(unittest.TestCase):
     """UT-EC-006: JSON has engines.ENGINE.protocols array."""
 
+    EXTRACT_KWARGS = {
+        "language": "swift", "module_prefix": "AIPRD",
+        "source_extensions": [".swift"], "domain_module": "SharedUtilities",
+    }
+
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         create_minimal_packages(self.tmpdir)
 
     def test_json_structure(self):
-        data, count = ec.extract_all(self.tmpdir)
+        data, count = ec.extract_all(self.tmpdir, **self.EXTRACT_KWARGS)
         output = ec.format_json(data, count)
 
         self.assertIn("extracted_at", output)
@@ -319,7 +335,7 @@ class TestJsonFormat(unittest.TestCase):
         self.assertIn("SharedUtilities", output["engines"])
 
     def test_shared_utilities_has_ports(self):
-        data, count = ec.extract_all(self.tmpdir)
+        data, count = ec.extract_all(self.tmpdir, **self.EXTRACT_KWARGS)
         output = ec.format_json(data, count)
 
         su = output["engines"]["SharedUtilities"]
@@ -328,7 +344,7 @@ class TestJsonFormat(unittest.TestCase):
         self.assertIn("EmbeddingGeneratorPort", port_names)
 
     def test_rag_engine_has_protocols(self):
-        data, count = ec.extract_all(self.tmpdir)
+        data, count = ec.extract_all(self.tmpdir, **self.EXTRACT_KWARGS)
         output = ec.format_json(data, count)
 
         rag = output["engines"]["RAGEngine"]
@@ -349,7 +365,10 @@ class TestPortsOnly(unittest.TestCase):
         create_minimal_packages(self.tmpdir)
 
     def test_ports_only_excludes_engines(self):
-        data, _ = ec.extract_all(self.tmpdir, ports_only=True)
+        data, _ = ec.extract_all(self.tmpdir, ports_only=True,
+                                 language="swift", module_prefix="AIPRD",
+                                 source_extensions=[".swift"],
+                                 domain_module="SharedUtilities")
         self.assertIn("SharedUtilities", data)
         self.assertNotIn("RAGEngine", data)
         self.assertNotIn("VerificationEngine", data)
@@ -393,22 +412,23 @@ public protocol BetaPort {
 # ---------------------------------------------------------------------------
 
 class TestDiscoverEngines(unittest.TestCase):
-    """UT-EC-009: Discover AIPRD-prefixed engine directories."""
+    """UT-EC-009: Discover engine directories with module prefix."""
 
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         create_minimal_packages(self.tmpdir)
 
-    def test_discovers_engines(self):
-        engines = ec.discover_engines(self.tmpdir)
+    def test_discovers_engines_with_prefix(self):
+        engines = ec.discover_engines(self.tmpdir, module_prefix="AIPRD")
         self.assertIn("SharedUtilities", engines)
         self.assertIn("RAGEngine", engines)
         self.assertIn("VerificationEngine", engines)
 
-    def test_strip_prefix(self):
-        self.assertEqual(ec.strip_prefix("AIPRDSharedUtilities"), "SharedUtilities")
-        self.assertEqual(ec.strip_prefix("AIPRDRAGEngine"), "RAGEngine")
-        self.assertEqual(ec.strip_prefix("PlainName"), "PlainName")
+    def test_discovers_engines_without_prefix(self):
+        engines = ec.discover_engines(self.tmpdir)
+        # Without prefix stripping, full directory names are used
+        self.assertIn("AIPRDSharedUtilities", engines)
+        self.assertIn("AIPRDRAGEngine", engines)
 
 
 if __name__ == "__main__":

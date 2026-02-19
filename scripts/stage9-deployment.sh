@@ -5,10 +5,8 @@ set -euo pipefail
 # stage9-deployment.sh — Stage 9: Deployment Simulation
 # ============================================================================
 #
-# Wraps the target product's existing `make distribute` target which runs:
-#   key injection -> build 8 XCFrameworks -> encrypt -> 40 encryption tests
-#
-# Verifies post-distribute state: public keys injected (not placeholder), exit code 0.
+# Runs the project's deploy_command from config/project.json.
+# If no deploy_command is configured, the stage passes with SKIP.
 #
 # Usage:
 #   scripts/stage9-deployment.sh \
@@ -80,118 +78,95 @@ if [[ -f "$OUTPUT_DIR/enforcement_report.json" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Run make distribute
+# Read deploy command from project config
 # ---------------------------------------------------------------------------
+
+PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+DEPLOY_CMD=""
+if [[ -f "$PROJECT_CONFIG" ]]; then
+    DEPLOY_CMD=$(python3 -c "import json; v=json.load(open('$PROJECT_CONFIG')).get('deploy_command'); print(v if v else '')" 2>/dev/null || echo "")
+fi
 
 log "INFO" "Stage 9 started — Deployment Simulation"
 log "INFO" "Builder dir: $BUILDER_DIR"
 
+# ---------------------------------------------------------------------------
+# Skip if no deploy command configured
+# ---------------------------------------------------------------------------
+
+if [[ -z "$DEPLOY_CMD" ]]; then
+    log "INFO" "No deploy_command configured in project.json — PASS (skipped)"
+
+    python3 - "$OUTPUT_DIR" <<'PYEOF'
+import json
+import sys
+from datetime import datetime, timezone
+
+output_dir = sys.argv[1]
+
+report = {
+    "stage": "deployment_simulation",
+    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "result": "PASS",
+    "reason": "no deploy_command configured — skipped",
+    "distribute_exit_code": 0,
+    "duration_seconds": 0,
+}
+
+report_path = f"{output_dir}/deployment_report.json"
+with open(report_path, 'w') as f:
+    json.dump(report, f, indent=2)
+    f.write('\n')
+
+print(json.dumps({
+    "stage": "stage9_deployment",
+    "result": "PASS",
+    "reason": "skipped — no deploy_command",
+}))
+PYEOF
+
+    log "INFO" "Stage 9 completed — result: PASS (skipped)"
+    exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Run deploy command
+# ---------------------------------------------------------------------------
+
 START_TIME=$(date +%s)
 
-DIST_OUTPUT=""
-DIST_EXIT=0
-DIST_OUTPUT=$(make -C "$BUILDER_DIR" distribute 2>&1) || DIST_EXIT=$?
+DEPLOY_OUTPUT=""
+DEPLOY_EXIT=0
+DEPLOY_OUTPUT=$(cd "$BUILDER_DIR" && eval "$DEPLOY_CMD" 2>&1) || DEPLOY_EXIT=$?
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
 # Save full output for debugging
-echo "$DIST_OUTPUT" > "$OUTPUT_DIR/stage9_dist_output.txt"
+echo "$DEPLOY_OUTPUT" > "$OUTPUT_DIR/stage9_deploy_output.txt"
 
-log "INFO" "make distribute completed in ${DURATION}s with exit code $DIST_EXIT"
-
-# ---------------------------------------------------------------------------
-# Parse encryption test count from output
-# ---------------------------------------------------------------------------
-
-ENCRYPTION_PASSED=0
-ENCRYPTION_TOTAL=0
-
-# Look for patterns like "38/38" or "Test Suite: All tests passed" or "38 tests passed"
-if echo "$DIST_OUTPUT" | grep -qE "([0-9]+)/\1"; then
-    ENCRYPTION_LINE=$(echo "$DIST_OUTPUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 || echo "")
-    if [[ -n "$ENCRYPTION_LINE" ]]; then
-        ENCRYPTION_PASSED=$(echo "$ENCRYPTION_LINE" | cut -d/ -f1)
-        ENCRYPTION_TOTAL=$(echo "$ENCRYPTION_LINE" | cut -d/ -f2)
-    fi
-fi
-
-# Fallback: count "Test Suite" lines or "passed" counts
-if [[ "$ENCRYPTION_TOTAL" -eq 0 ]]; then
-    PASS_COUNT=$(echo "$DIST_OUTPUT" | grep -c "passed" || echo "0")
-    if [[ "$PASS_COUNT" -gt 0 ]]; then
-        ENCRYPTION_PASSED=$PASS_COUNT
-        ENCRYPTION_TOTAL=$PASS_COUNT
-    fi
-fi
-
-log "INFO" "Encryption tests: $ENCRYPTION_PASSED/$ENCRYPTION_TOTAL"
-
-# ---------------------------------------------------------------------------
-# Verify public key was injected (not still a placeholder)
-# ---------------------------------------------------------------------------
-
-KEY_INJECTED=true
-PLACEHOLDER_KEY="PLACEHOLDER_PUBLIC_KEY_INJECT_AT_BUILD_TIME"
-
-VALIDATOR_FILE="$BUILDER_DIR/packages/AIPRDEncryptionEngine/Sources/Licensing/SecureLicenseValidator.swift"
-VALIDATE_SCRIPT="$BUILDER_DIR/scripts/distribution/validate-license.swift"
-
-if [[ -f "$VALIDATOR_FILE" ]]; then
-    if grep -q "$PLACEHOLDER_KEY" "$VALIDATOR_FILE"; then
-        log "ERROR" "Placeholder key still present in SecureLicenseValidator.swift — injection failed"
-        KEY_INJECTED=false
-    elif grep -qE 'publicKeyBase64 = "[A-Za-z0-9+/=]{40,}"' "$VALIDATOR_FILE"; then
-        log "INFO" "Public key verified in SecureLicenseValidator.swift"
-    else
-        log "WARN" "No recognizable key found in SecureLicenseValidator.swift"
-        KEY_INJECTED=false
-    fi
-else
-    log "WARN" "SecureLicenseValidator.swift not found at expected path"
-    KEY_INJECTED=false
-fi
-
-if [[ -f "$VALIDATE_SCRIPT" ]]; then
-    if grep -q "$PLACEHOLDER_KEY" "$VALIDATE_SCRIPT"; then
-        log "ERROR" "Placeholder key still present in validate-license.swift — injection failed"
-        KEY_INJECTED=false
-    elif grep -qE 'publicKeyBase64 = "[A-Za-z0-9+/=]{40,}"' "$VALIDATE_SCRIPT"; then
-        log "INFO" "Public key verified in validate-license.swift"
-    else
-        log "WARN" "No recognizable key found in validate-license.swift"
-        KEY_INJECTED=false
-    fi
-else
-    log "WARN" "validate-license.swift not found at expected path"
-    KEY_INJECTED=false
-fi
+log "INFO" "Deploy command completed in ${DURATION}s with exit code $DEPLOY_EXIT"
 
 # ---------------------------------------------------------------------------
 # Determine overall result
 # ---------------------------------------------------------------------------
 
 OVERALL_RESULT="PASS"
-if [[ "$DIST_EXIT" -ne 0 ]]; then
+if [[ "$DEPLOY_EXIT" -ne 0 ]]; then
     OVERALL_RESULT="FAIL"
-    log "ERROR" "Deployment simulation FAILED (make distribute exit code: $DIST_EXIT)"
-fi
-if [[ "$KEY_INJECTED" == "false" ]]; then
-    OVERALL_RESULT="FAIL"
-    log "ERROR" "Deployment simulation FAILED (public key not properly injected)"
+    log "ERROR" "Deployment simulation FAILED (exit code: $DEPLOY_EXIT)"
 fi
 
 # ---------------------------------------------------------------------------
 # Write deployment report
 # ---------------------------------------------------------------------------
 
-python3 - "$OUTPUT_DIR" "$OVERALL_RESULT" "$DIST_EXIT" "$DURATION" \
-    "$ENCRYPTION_PASSED" "$ENCRYPTION_TOTAL" "$KEY_INJECTED" <<'PYEOF'
+python3 - "$OUTPUT_DIR" "$OVERALL_RESULT" "$DEPLOY_EXIT" "$DURATION" "$DEPLOY_CMD" <<'PYEOF'
 import json
 import sys
 from datetime import datetime, timezone
 
-output_dir, result, exit_code, duration, enc_passed, enc_total, key_injected = sys.argv[1:8]
+output_dir, result, exit_code, duration, deploy_cmd = sys.argv[1:6]
 
 report = {
     "stage": "deployment_simulation",
@@ -199,11 +174,7 @@ report = {
     "result": result,
     "distribute_exit_code": int(exit_code),
     "duration_seconds": int(duration),
-    "encryption_tests": {
-        "passed": int(enc_passed),
-        "total": int(enc_total),
-    },
-    "public_key_injected": key_injected == "true",
+    "deploy_command": deploy_cmd,
 }
 
 report_path = f"{output_dir}/deployment_report.json"
@@ -216,8 +187,6 @@ print(json.dumps({
     "result": result,
     "exit_code": int(exit_code),
     "duration_seconds": int(duration),
-    "encryption_tests": f"{enc_passed}/{enc_total}",
-    "public_key_injected": key_injected == "true",
 }))
 PYEOF
 

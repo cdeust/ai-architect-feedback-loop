@@ -148,7 +148,7 @@ INTEGRATION_PLAN_SCHEMA='{
     {"from": "engine", "to": "engine", "via": "PortName", "description": "how they connect"}
   ],
   "new_files": [],
-  "test_files": ["packages/AIPRDEngine/Tests/NewTest.swift"],
+  "test_files": ["packages/module/tests/test_new.py"],
   "constraints": {
     "no_new_packages": true,
     "no_standalone_modules": true,
@@ -297,13 +297,24 @@ print(' '.join(report.get('affected_engines', [])))
         --engines $AFFECTED_ENGINES \
         --output "$TMP_DIR/contracts_${FINDING_ID}.md" > /dev/null 2>&1
 
-    # Build file tree for affected engines
+    # Build file tree for affected engines (language-agnostic)
+    # Read module prefix and source extensions from project config
+    PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
+    MODULE_PREFIX=""
+    SOURCE_EXTS=".py"
+    if [[ -f "$PROJECT_CONFIG" ]]; then
+        MODULE_PREFIX=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('module_prefix', ''))" 2>/dev/null || echo "")
+        SOURCE_EXTS=$(python3 -c "import json; print(' '.join(json.load(open('$PROJECT_CONFIG')).get('source_extensions', ['.py'])))" 2>/dev/null || echo ".py")
+    fi
+
     FILE_TREE=""
     for engine in $AFFECTED_ENGINES; do
-        engine_dir="$PACKAGES_DIR/AIPRD${engine}/Sources"
+        engine_dir="$PACKAGES_DIR/${MODULE_PREFIX}${engine}"
         if [[ -d "$engine_dir" ]]; then
             FILE_TREE+="## $engine"$'\n'
-            FILE_TREE+=$(find "$engine_dir" -name "*.swift" -not -path "*/.build/*" 2>/dev/null | sort | sed "s|$PACKAGES_DIR/||")
+            for ext in $SOURCE_EXTS; do
+                FILE_TREE+=$(find "$engine_dir" -name "*${ext}" -not -path "*/.build/*" -not -path "*/node_modules/*" -not -path "*/__pycache__/*" 2>/dev/null | sort | sed "s|$PACKAGES_DIR/||")
+            done
             FILE_TREE+=$'\n\n'
         fi
     done

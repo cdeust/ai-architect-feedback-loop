@@ -208,7 +208,14 @@ run_gate_1() {
     violations_file=$(mktemp)
     echo '[]' > "$violations_file"
 
-    # Only check patterns in changed Swift source files (delta-only)
+    # Read source extensions from project config
+    local project_config="$SCRIPT_DIR/../config/project.json"
+    local source_exts=".py"
+    if [[ -f "$project_config" ]]; then
+        source_exts=$(python3 -c "import json; print(' '.join(json.load(open('$project_config')).get('source_extensions', ['.py'])))" 2>/dev/null || echo ".py")
+    fi
+
+    # Only check patterns in changed source files (delta-only)
     while IFS= read -r pattern || [[ -n "$pattern" ]]; do
         [[ -z "$pattern" ]] && continue
         [[ "$pattern" == \#* ]] && continue
@@ -218,11 +225,22 @@ run_gate_1() {
             [[ -z "$file" ]] && continue
             local full_path="$BUILDER_DIR/$file"
             [[ -f "$full_path" ]] || continue
-            [[ "$file" == *.swift ]] || continue
+            # Check if file matches any configured source extension
+            local matches_ext=false
+            for ext in $source_exts; do
+                if [[ "$file" == *"$ext" ]]; then
+                    matches_ext=true
+                    break
+                fi
+            done
+            [[ "$matches_ext" == "false" ]] && continue
             # Skip test files and build artifacts
             [[ "$file" == */Tests/* ]] && continue
             [[ "$file" == */.build/* ]] && continue
             [[ "$file" == */test/* ]] && continue
+            [[ "$file" == */tests/* ]] && continue
+            [[ "$file" == */node_modules/* ]] && continue
+            [[ "$file" == */__pycache__/* ]] && continue
 
             if grep -qE "$pattern" "$full_path" 2>/dev/null; then
                 local match_lines
@@ -248,8 +266,17 @@ PYEOF
         done <<< "$changed_files"
     done < "$patterns_file"
 
-    # Count scanned files (only changed Swift files)
-    files_scanned=$(echo "$changed_files" | grep -c '\.swift$' || echo "0")
+    # Count scanned source files
+    files_scanned=0
+    while IFS= read -r file; do
+        [[ -z "$file" ]] && continue
+        for ext in $source_exts; do
+            if [[ "$file" == *"$ext" ]]; then
+                files_scanned=$((files_scanned + 1))
+                break
+            fi
+        done
+    done <<< "$changed_files"
 
     local result="PASS"
     if [[ "$violations" -gt 0 ]]; then
@@ -386,33 +413,57 @@ run_gate_3() {
     local files_checked=0
     local orphan_count=0
 
+    # Read source extensions and modules dir from project config
+    local gate3_project_config="$SCRIPT_DIR/../config/project.json"
+    local gate3_source_exts=".py"
+    local gate3_modules_dir="packages"
+    if [[ -f "$gate3_project_config" ]]; then
+        gate3_source_exts=$(python3 -c "import json; print(' '.join(json.load(open('$gate3_project_config')).get('source_extensions', ['.py'])))" 2>/dev/null || echo ".py")
+        gate3_modules_dir=$(python3 -c "import json; print(json.load(open('$gate3_project_config')).get('modules_dir', 'packages'))" 2>/dev/null || echo "packages")
+    fi
+
     while IFS= read -r file; do
         [[ -z "$file" ]] && continue
-        # Only check Swift source files (not tests, not configs)
-        [[ "$file" != *.swift ]] && continue
+        # Only check source files matching configured extensions
+        local gate3_matches=false
+        for ext in $gate3_source_exts; do
+            if [[ "$file" == *"$ext" ]]; then
+                gate3_matches=true
+                break
+            fi
+        done
+        [[ "$gate3_matches" == "false" ]] && continue
         [[ "$file" == */Tests/* ]] && continue
+        [[ "$file" == */tests/* ]] && continue
         [[ "$file" == */.build/* ]] && continue
+        [[ "$file" == */node_modules/* ]] && continue
+        [[ "$file" == */__pycache__/* ]] && continue
 
         files_checked=$((files_checked + 1))
         local full_path="$BUILDER_DIR/$file"
         [[ ! -f "$full_path" ]] && continue
 
-        # Extract declared type names (class, struct, enum, protocol)
+        # Extract declared type names (class, struct, enum, protocol, interface, type, def)
         local types
-        types=$(grep -oE '(public |open |internal )?(class|struct|enum|protocol)\s+[A-Z][A-Za-z0-9_]+' "$full_path" 2>/dev/null | \
+        types=$(grep -oE '(public |open |internal |export )?(class|struct|enum|protocol|interface|type)\s+[A-Z][A-Za-z0-9_]+' "$full_path" 2>/dev/null | \
                 grep -oE '[A-Z][A-Za-z0-9_]+$' || true)
 
         if [[ -z "$types" ]]; then
             continue
         fi
 
-        # Check if any declared type is referenced in other Swift files
+        # Check if any declared type is referenced in other source files
         local referenced=false
         while IFS= read -r type_name; do
             [[ -z "$type_name" ]] && continue
-            local refs
-            refs=$(grep -rl --include="*.swift" "$type_name" "$BUILDER_DIR/packages/" "$BUILDER_DIR/library/" 2>/dev/null | \
-                   grep -v "$full_path" | grep -v "/Tests/" | grep -v "/.build/" | head -1 || true)
+            local refs=""
+            for ext in $gate3_source_exts; do
+                refs=$(grep -rl --include="*${ext}" "$type_name" "$BUILDER_DIR/$gate3_modules_dir/" 2>/dev/null | \
+                       grep -v "$full_path" | grep -v "/Tests/" | grep -v "/tests/" | grep -v "/.build/" | head -1 || true)
+                if [[ -n "$refs" ]]; then
+                    break
+                fi
+            done
             if [[ -n "$refs" ]]; then
                 referenced=true
                 break
@@ -466,13 +517,20 @@ PYEOF
 # ---------------------------------------------------------------------------
 
 run_gate_4() {
-    log "INFO" "Gate 4: Build verification (make build-library)"
+    log "INFO" "Gate 4: Build verification"
     local start_time
     start_time=$(date +%s)
 
+    # Read build command from project config
+    local gate4_project_config="$SCRIPT_DIR/../config/project.json"
+    local build_cmd="make build"
+    if [[ -f "$gate4_project_config" ]]; then
+        build_cmd=$(python3 -c "import json; print(json.load(open('$gate4_project_config')).get('build_command', 'make build'))" 2>/dev/null || echo "make build")
+    fi
+
     local build_output
     local build_exit=0
-    build_output=$(make -C "$BUILDER_DIR" build-library 2>&1) || build_exit=$?
+    build_output=$(cd "$BUILDER_DIR" && eval "$build_cmd" 2>&1) || build_exit=$?
 
     local result="PASS"
     if [[ "$build_exit" -ne 0 ]]; then
@@ -499,139 +557,40 @@ run_gate_4() {
 # ---------------------------------------------------------------------------
 
 run_gate_5() {
-    log "INFO" "Gate 5: Per-package test suite"
+    log "INFO" "Gate 5: Test suite"
     local start_time
     start_time=$(date +%s)
 
-    local result="PASS"
-    local tests_run=0
-    local tests_passed=0
-    local tests_failed=0
-    local tests_skipped=0
-    local package_results_file
-    package_results_file=$(mktemp)
-    echo '[]' > "$package_results_file"
-
-    # Run tests per-package, skipping packages without Tests/ directory
-    # VisionEngineApple requires Xcode plugin flags and hangs without them — skip
-    local test_timeout=120  # 2 minutes per package
-    for package_dir in "$BUILDER_DIR"/packages/AIPRD*; do
-        [[ -d "$package_dir" ]] || continue
-        local pkg_name
-        pkg_name=$(basename "$package_dir")
-
-        # VisionEngineApple needs -Xswiftc -plugin-path flags; skip in pipeline
-        if [[ "$pkg_name" == "AIPRDVisionEngineApple" ]]; then
-            log "INFO" "Gate 5: $pkg_name — requires Xcode plugin flags, skipping"
-            tests_skipped=$((tests_skipped + 1))
-            python3 -c "
-import json
-with open('$package_results_file') as f:
-    results = json.load(f)
-results.append({'package': '$pkg_name', 'result': 'SKIPPED', 'reason': 'requires Xcode plugin flags'})
-with open('$package_results_file', 'w') as f:
-    json.dump(results, f)
-"
-            continue
-        fi
-
-        if [[ ! -d "$package_dir/Tests" ]]; then
-            log "INFO" "Gate 5: $pkg_name — no Tests/ directory, skipping"
-            tests_skipped=$((tests_skipped + 1))
-            python3 -c "
-import json
-with open('$package_results_file') as f:
-    results = json.load(f)
-results.append({'package': '$pkg_name', 'result': 'SKIPPED', 'reason': 'no Tests/ directory'})
-with open('$package_results_file', 'w') as f:
-    json.dump(results, f)
-"
-            continue
-        fi
-
-        tests_run=$((tests_run + 1))
-        local pkg_output
-        local pkg_exit=0
-        pkg_output=$(timeout "$test_timeout" swift test --package-path "$package_dir" 2>&1) || pkg_exit=$?
-
-        # timeout exits 124 when it kills the process
-        if [[ "$pkg_exit" -eq 124 ]]; then
-            log "WARN" "Gate 5: $pkg_name — TIMEOUT after ${test_timeout}s"
-            pkg_exit=1
-        fi
-
-        if [[ "$pkg_exit" -eq 0 ]]; then
-            log "INFO" "Gate 5: $pkg_name — tests passed"
-            tests_passed=$((tests_passed + 1))
-            python3 -c "
-import json
-with open('$package_results_file') as f:
-    results = json.load(f)
-results.append({'package': '$pkg_name', 'result': 'PASS'})
-with open('$package_results_file', 'w') as f:
-    json.dump(results, f)
-"
-        else
-            log "WARN" "Gate 5: $pkg_name — tests FAILED (exit=$pkg_exit)"
-            tests_failed=$((tests_failed + 1))
-            result="FAIL"
-            # Save failure output
-            echo "$pkg_output" > "$OUTPUT_DIR/gate5_${pkg_name}_output.txt"
-            python3 -c "
-import json
-with open('$package_results_file') as f:
-    results = json.load(f)
-results.append({'package': '$pkg_name', 'result': 'FAIL', 'exit_code': $pkg_exit, 'output_file': 'gate5_${pkg_name}_output.txt'})
-with open('$package_results_file', 'w') as f:
-    json.dump(results, f)
-"
-        fi
-    done
-
-    # Also run library-level tests if Tests/ exists
-    if [[ -d "$BUILDER_DIR/library/Tests" ]]; then
-        tests_run=$((tests_run + 1))
-        local lib_output
-        local lib_exit=0
-        lib_output=$(timeout "$test_timeout" swift test --package-path "$BUILDER_DIR/library" 2>&1) || lib_exit=$?
-
-        if [[ "$lib_exit" -eq 0 ]]; then
-            log "INFO" "Gate 5: library — tests passed"
-            tests_passed=$((tests_passed + 1))
-        else
-            log "WARN" "Gate 5: library — tests FAILED (exit=$lib_exit)"
-            tests_failed=$((tests_failed + 1))
-            result="FAIL"
-            echo "$lib_output" > "$OUTPUT_DIR/gate5_library_output.txt"
-        fi
+    # Read test command from project config
+    local gate5_project_config="$SCRIPT_DIR/../config/project.json"
+    local test_cmd="make test"
+    if [[ -f "$gate5_project_config" ]]; then
+        test_cmd=$(python3 -c "import json; print(json.load(open('$gate5_project_config')).get('test_command', 'make test'))" 2>/dev/null || echo "make test")
     fi
 
-    if [[ "$tests_run" -eq 0 ]]; then
-        log "INFO" "Gate 5: No test targets found — PASS"
+    local result="PASS"
+    local test_output
+    local test_exit=0
+    local test_timeout=300  # 5 minutes
+
+    test_output=$(cd "$BUILDER_DIR" && timeout "$test_timeout" bash -c "$test_cmd" 2>&1) || test_exit=$?
+
+    if [[ "$test_exit" -eq 124 ]]; then
+        log "WARN" "Gate 5: TIMEOUT after ${test_timeout}s"
+        test_exit=1
+    fi
+
+    if [[ "$test_exit" -ne 0 ]]; then
+        result="FAIL"
+        log "WARN" "Gate 5: Tests FAILED (exit=$test_exit)"
+        echo "$test_output" > "$OUTPUT_DIR/gate5_test_output.txt"
     else
-        log "INFO" "Gate 5: $tests_passed/$tests_run passed, $tests_skipped skipped"
+        log "INFO" "Gate 5: Tests passed"
     fi
 
     local details_file
     details_file=$(mktemp)
-    python3 - "$details_file" "$package_results_file" "$tests_run" "$tests_passed" "$tests_failed" "$tests_skipped" <<'PYEOF'
-import json, sys
-details_file, results_file = sys.argv[1], sys.argv[2]
-tests_run, tests_passed, tests_failed, tests_skipped = (int(x) for x in sys.argv[3:7])
-with open(results_file) as f:
-    packages = json.load(f)
-details = {
-    "mode": "per_package",
-    "tests_run": tests_run,
-    "tests_passed": tests_passed,
-    "tests_failed": tests_failed,
-    "tests_skipped": tests_skipped,
-    "packages": packages
-}
-with open(details_file, 'w') as f:
-    json.dump(details, f)
-PYEOF
-    rm -f "$package_results_file"
+    python3 -c "import json; json.dump({'mode':'single_command','test_command':'$test_cmd','exit_code':$test_exit,'output_file':'gate5_test_output.txt' if $test_exit != 0 else ''},open('$details_file','w'))"
 
     local duration=$(( $(date +%s) - start_time ))
     add_gate_result 5 "test_suite" "$result" "$duration" "$details_file"
@@ -643,34 +602,48 @@ PYEOF
 # ---------------------------------------------------------------------------
 
 run_gate_6() {
-    log "INFO" "Gate 6: Encryption integrity (make distribute)"
+    log "INFO" "Gate 6: Deployment verification"
     local start_time
     start_time=$(date +%s)
 
+    # Read deploy command from project config
+    local gate6_project_config="$SCRIPT_DIR/../config/project.json"
+    local deploy_cmd=""
+    if [[ -f "$gate6_project_config" ]]; then
+        deploy_cmd=$(python3 -c "import json; v=json.load(open('$gate6_project_config')).get('deploy_command'); print(v if v else '')" 2>/dev/null || echo "")
+    fi
+
+    if [[ -z "$deploy_cmd" ]]; then
+        log "INFO" "Gate 6: No deploy_command configured — PASS (skipped)"
+        local details_file
+        details_file=$(mktemp)
+        echo '{"reason":"no deploy_command configured","skipped":true}' > "$details_file"
+        local duration=$(( $(date +%s) - start_time ))
+        add_gate_result 6 "deployment_verification" "PASS" "$duration" "$details_file"
+        rm -f "$details_file"
+        return
+    fi
+
     local dist_output
     local dist_exit=0
-    dist_output=$(make -C "$BUILDER_DIR" distribute 2>&1) || dist_exit=$?
-
-    # Try to extract encryption test count
-    local encryption_tests
-    encryption_tests=$(echo "$dist_output" | grep -oE "[0-9]+/[0-9]+ encryption" | head -1 || echo "")
+    dist_output=$(cd "$BUILDER_DIR" && eval "$deploy_cmd" 2>&1) || dist_exit=$?
 
     local result="PASS"
     if [[ "$dist_exit" -ne 0 ]]; then
         result="FAIL"
-        log "ERROR" "Gate 6: Distribution failed with exit code $dist_exit"
+        log "ERROR" "Gate 6: Deploy command failed with exit code $dist_exit"
     else
-        log "INFO" "Gate 6: Distribution succeeded${encryption_tests:+ ($encryption_tests)}"
+        log "INFO" "Gate 6: Deploy command succeeded"
     fi
 
-    echo "$dist_output" > "$OUTPUT_DIR/gate6_dist_output.txt"
+    echo "$dist_output" > "$OUTPUT_DIR/gate6_deploy_output.txt"
 
     local details_file
     details_file=$(mktemp)
-    python3 -c "import json; json.dump({'exit_code':$dist_exit,'encryption_tests':'${encryption_tests:-unknown}','output_file':'gate6_dist_output.txt'},open('$details_file','w'))"
+    python3 -c "import json; json.dump({'exit_code':$dist_exit,'deploy_command':'$deploy_cmd','output_file':'gate6_deploy_output.txt'},open('$details_file','w'))"
 
     local duration=$(( $(date +%s) - start_time ))
-    add_gate_result 6 "encryption_integrity" "$result" "$duration" "$details_file"
+    add_gate_result 6 "deployment_verification" "$result" "$duration" "$details_file"
     rm -f "$details_file"
 }
 

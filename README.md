@@ -2,6 +2,8 @@
 
 A fully autonomous 10-stage product improvement pipeline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It analyzes code findings, generates PRDs, implements fixes, enforces quality gates, and delivers pull requests — all through a single `/run-pipeline` slash command with zero human intervention.
 
+Works with **any tech stack** — Python, TypeScript, Go, Rust, Java, Swift, and more — through configuration alone.
+
 **Author:** Clement DEUST — [ai-architect.tools](https://ai-architect.tools)
 
 ## License
@@ -26,10 +28,13 @@ echo "YOUR_LICENSE_KEY" > ~/.aiprd/license-key
 # 3. Point the pipeline at your target product
 export PIPELINE_BUILDER="/absolute/path/to/your-product"
 
-# 4. Verify everything is ready
+# 4. Configure for your stack (see Configuration below)
+# Edit config/project.json and config/architecture.md
+
+# 5. Verify everything is ready
 make pipeline-health-check
 
-# 5. Run the pipeline
+# 6. Run the pipeline
 claude                  # launch Claude Code
 /run-pipeline           # type this in the Claude Code session
 ```
@@ -80,35 +85,95 @@ export PIPELINE_BUILDER="/absolute/path/to/your-product"
 
 The target product repository must:
 - Be a git repository
-- Contain a `packages/` directory with your engine/module source code
 - Have a `CLAUDE.md` file describing its architecture (used by Stages 3, 5, and 7)
-- Support `swift build` and `swift test` (or equivalent build commands configured in the stage scripts)
 
-### 4. Adapt the configuration to your product
+### 4. Configure for your stack
 
-The pipeline ships with default configuration targeting a Swift port/adapter architecture. You will need to update these files to match your product:
+The pipeline is stack-agnostic. Configure it for your project through two files:
 
-**`config/engine_graph_overrides.json`** — Define your product's module/engine dependency graph. Each entry needs a `role`, `feeds` (downstream dependents), and `fed_by` (upstream dependencies):
+#### `config/project.json` — Project settings
+
+This file tells the pipeline about your language, build tools, and project structure:
 
 ```json
 {
-  "YourModule": {
-    "role": "What this module does",
-    "feeds": ["DownstreamModule"],
-    "fed_by": ["UpstreamModule"]
+  "language": "python",
+  "source_extensions": [".py"],
+  "test_file_patterns": ["**/test_*.py", "**/*_test.py"],
+  "test_dir_name": "tests",
+  "module_prefix": "",
+  "modules_dir": "packages",
+  "domain_module": null,
+  "interface_suffix": null,
+  "build_command": "make build",
+  "test_command": "make test",
+  "deploy_command": null,
+  "required_tools": ["python3", "git", "gh", "jq", "claude"],
+  "contract_extractor": null
+}
+```
+
+| Field | Description |
+|---|---|
+| `language` | Primary language (`python`, `typescript`, `swift`, `go`, etc.) |
+| `source_extensions` | File extensions to scan (e.g. `[".py"]`, `[".ts", ".tsx"]`) |
+| `test_file_patterns` | Glob patterns for test files |
+| `test_dir_name` | Test directory name convention |
+| `module_prefix` | Prefix stripped from directory names for module discovery |
+| `modules_dir` | Directory containing modules/packages |
+| `domain_module` | Name of shared/domain module (if any) |
+| `interface_suffix` | Suffix for interface types (if any) |
+| `build_command` | Single build command to run in the target project |
+| `test_command` | Single test command to run in the target project |
+| `deploy_command` | Deployment command or `null` to skip deployment stage |
+| `required_tools` | Binaries to check in health check |
+| `contract_extractor` | Custom script path for extracting interfaces (`null` = built-in) |
+
+#### `config/architecture.md` — Architecture description
+
+Write a markdown description of your product's architecture. This text is injected into AI prompts so Claude understands your codebase structure:
+
+```markdown
+# Project Architecture
+
+## Module Structure
+- auth/ — Authentication and authorization
+- api/ — REST API endpoints
+- core/ — Business logic and domain models
+
+## Key Patterns
+- Layered architecture with dependency inversion
+- All cross-module communication through defined interfaces
+
+## Constraints
+- core/ must have zero framework imports
+- New features must include tests
+```
+
+### 5. Adapt module configuration
+
+**`config/engine_graph_overrides.json`** — Define your product's module dependency graph:
+
+```json
+{
+  "description": "Module dependency graph",
+  "engines": {
+    "core": {
+      "role": "shared_infrastructure",
+      "feeds": ["api", "worker"],
+      "fed_by": []
+    }
   }
 }
 ```
 
-**`config/category_engine_map.json`** — Map finding categories to your product's modules. This tells the pipeline which modules are affected by each type of finding.
+**`config/category_engine_map.json`** — Map finding categories to your modules.
 
-**`config/thresholds.json`** — Tune scoring thresholds (impact scores, quality minimums, retry limits) to your quality bar.
+**`config/thresholds.json`** — Tune scoring thresholds.
 
-**`config/prohibited_patterns.txt`** — Add or remove regex patterns that Stage 6 rejects (TODO, FIXME, stubs, etc.).
+**`config/prohibited_patterns.txt`** — Regex patterns that Stage 6 rejects.
 
-**`prompts/`** — The prompt templates reference architecture details (port names, engine roles, module structure). Update them to describe your product's architecture so Claude generates accurate analysis and code.
-
-### 5. Install the `/run-pipeline` command
+### 6. Install the `/run-pipeline` command
 
 The command is defined in `.claude/commands/run-pipeline.md` and is **automatically available** when you open Claude Code from within this project directory:
 
@@ -121,7 +186,7 @@ Type `/run-pipeline` in the Claude Code session to invoke it.
 
 #### Using it in another project
 
-Copy the command file into your target project so it's available there too:
+Copy the command file into your target project:
 
 ```bash
 mkdir -p /path/to/your-project/.claude/commands
@@ -135,15 +200,13 @@ mkdir -p ~/.claude/commands
 cp .claude/commands/run-pipeline.md ~/.claude/commands/
 ```
 
-### 6. Verify the setup
-
-Run the health check to confirm all dependencies and paths are correct:
+### 7. Verify the setup
 
 ```bash
 make pipeline-health-check
 ```
 
-This validates: toolchain (claude, python, jq, gh, git), target product accessibility, configuration file presence, and license key.
+This validates: toolchain (configured tools), target product accessibility, configuration file presence, and license key.
 
 ## Usage
 
@@ -247,13 +310,13 @@ Place a JSON file at the path expected by Stage 1 (typically `tv_output.json` in
 
 These are the default categories defined in `config/thresholds.json` and mapped to modules in `config/category_engine_map.json`:
 
-`api_change` · `behavior_change` · `dependency_change` · `config_change` · `schema_change` · `performance_change` · `security_change` · `prompting` · `retrieval` · `verification` · `embeddings` · `inference` · `cost_optimization` · `benchmarks`
+`api_change` · `behavior_change` · `dependency_change` · `config_change` · `schema_change` · `performance_change` · `security_change`
 
 Add or remove categories by editing both `thresholds.json` (stage_1.relevance_categories) and `category_engine_map.json` (mappings).
 
 ### Using draft specs as findings
 
-Findings don't have to come from a code analysis tool. You can use the pipeline to process **draft specs**, **RFCs**, or **improvement proposals** — anything that describes a change to implement. Write each spec as a finding:
+Findings don't have to come from a code analysis tool. You can use the pipeline to process **draft specs**, **RFCs**, or **improvement proposals**:
 
 ```json
 {
@@ -265,19 +328,10 @@ Findings don't have to come from a code analysis tool. You can use the pipeline 
       "description": "The current auth flow requires full re-login when tokens expire. Add silent refresh using the refresh_token grant type. Must handle concurrent requests during refresh and queue them until the new token is available.",
       "relevance_category": "api_change",
       "relevance_score": 0.9
-    },
-    {
-      "id": "spec-cache-layer",
-      "title": "Introduce response caching for read endpoints",
-      "description": "Add a cache layer for GET /api/v1/resources with TTL-based invalidation. Cache should be per-tenant and respect Authorization headers. Use existing Redis instance.",
-      "relevance_category": "performance_change",
-      "relevance_score": 0.85
     }
   ]
 }
 ```
-
-Save this file and point Stage 1 at it. The pipeline will score, prioritize, analyze impact, generate PRDs, implement, and deliver PRs for each spec — fully autonomously.
 
 ## Pipeline stages
 
@@ -285,10 +339,10 @@ Save this file and point Stage 1 at it. The pipeline will score, prioritize, ana
 Reads the input JSON, filters findings by relevance category and score threshold, and produces a ranked list for prioritization.
 
 ### Stage 2 — Impact analysis
-Computes a compound impact score across four dimensions: engines affected, propagation depth, contract impact, and test coverage delta. Findings must score above 0.3 and affect at least 2 engines to proceed.
+Computes a compound impact score across four dimensions: modules affected, propagation depth, contract impact, and test coverage delta. Findings must score above 0.3 and affect at least 2 modules to proceed.
 
 ### Stage 3 — Integration design
-Designs architectural modifications respecting the target product's architecture. Validates that all referenced files exist and protocol changes are consistent.
+Designs architectural modifications respecting the target product's architecture. Validates that all referenced files exist and interface changes are consistent.
 
 ### Stage 4 — PRD generation
 Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd-verification.md`, `prd-jira.md`, and `prd-tests.md`. Scope (simple/moderate/complex) is derived automatically from pipeline artifacts.
@@ -297,16 +351,16 @@ Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd
 Creates a feature branch, implements code changes following the PRD and integration plan, builds the project, and runs tests.
 
 ### Stage 6 — Quality gates
-Runs deterministic checks: prohibited pattern detection, orphan file detection, and build verification.
+Runs deterministic checks: prohibited pattern detection, orphan file detection, build verification, test suite, and deployment verification.
 
 ### Stage 7 — Semantic verification
-An independent verifier analyzes the git diff against the PRD. Checks alignment score (must be >= 0.7), cross-engine consistency, and anti-patterns.
+An independent verifier analyzes the git diff against the PRD. Checks alignment score (must be >= 0.7), cross-module consistency, and anti-patterns.
 
 ### Stage 8 — Benchmark
 Measures quality metrics and compares against baselines. Informational — does not block the pipeline.
 
 ### Stage 9 — Deployment simulation
-Simulates deployment readiness: key injection verification, package resolution, and signing checks.
+Runs the configured `deploy_command` from `config/project.json`. If no deploy command is configured, the stage passes automatically.
 
 ### Stage 10 — Pull request
 Creates a pull request per finding with a structured description linking back to the impact analysis and PRD.
@@ -319,11 +373,13 @@ Creates a pull request per finding with a structured description linking back to
 │   └── commands/
 │       └── run-pipeline.md        # The /run-pipeline slash command
 ├── config/
+│   ├── project.json               # Project-specific settings (language, build, test)
+│   ├── architecture.md            # Architecture description (injected into prompts)
 │   ├── thresholds.json            # Scoring thresholds for all stages
 │   ├── category_engine_map.json   # Finding category → module mapping
 │   ├── engine_graph_overrides.json# Module dependency graph
 │   └── prohibited_patterns.txt    # Anti-pattern regex rules
-├── prompts/                       # Stage prompt templates (customize for your product)
+├── prompts/                       # Stage prompt templates
 │   ├── impact_analysis.md
 │   ├── integration_design.md
 │   ├── prd_generation.md
@@ -331,6 +387,7 @@ Creates a pull request per finding with a structured description linking back to
 │   └── semantic_verification.md
 ├── scripts/                       # Stage scripts, validators, processors
 │   ├── pipeline.sh                # Main orchestrator
+│   ├── load_project_config.py     # Shared config loader
 │   ├── stage[1-10]-*.sh           # Individual stage scripts
 │   ├── validate_*.py              # Output validators
 │   └── test_*.{sh,py}            # Test suite
@@ -357,6 +414,8 @@ Customize these files in `config/` to match your product:
 
 | File | Purpose | Must customize? |
 |---|---|---|
+| `project.json` | Language, build/test commands, module structure | **Yes** |
+| `architecture.md` | Free-form architecture description for AI prompts | **Yes** |
 | `engine_graph_overrides.json` | Module dependency graph (roles, feeds, fed_by) | **Yes** |
 | `category_engine_map.json` | Maps finding categories to affected modules | **Yes** |
 | `thresholds.json` | Scoring minimums, retry limits, gate parameters | Recommended |
@@ -364,7 +423,7 @@ Customize these files in `config/` to match your product:
 
 ### Prompt templates
 
-The files in `prompts/` contain architecture-specific instructions that Claude uses during analysis and implementation stages. Update them to describe your product's module structure, naming conventions, and architectural constraints.
+The files in `prompts/` use `{{ARCHITECTURE_DESCRIPTION}}` and other placeholders that are populated from your configuration. They are stack-agnostic by default — no language-specific content needs to be changed.
 
 ## Troubleshooting
 
@@ -374,9 +433,10 @@ The files in `prompts/` contain architecture-specific instructions that Claude u
 | `[FAIL] License key not found` | Place your key at `~/.aiprd/license-key` |
 | `[FAIL] License invalid` | Verify your key at [ai-architect.tools](https://ai-architect.tools) |
 | Stage 4 fails with "skill not found" | Ensure the `ai-prd-generator` skill is installed |
-| Build failures in Stage 5 | Confirm the target product repo builds (`swift build` in `$PIPELINE_BUILDER`) |
+| Build failures in Stage 5 | Verify `build_command` in `config/project.json` works in your target repo |
+| Test failures in Stage 5 | Verify `test_command` in `config/project.json` works in your target repo |
 | `gh` errors in Stage 10 | Run `gh auth login` to authenticate the GitHub CLI |
-| Health check fails on paths | Verify `PIPELINE_BUILDER` points to a valid git repo with `packages/` |
+| Health check fails on tools | Add missing tools to your PATH or update `required_tools` in `config/project.json` |
 
 ## About
 
