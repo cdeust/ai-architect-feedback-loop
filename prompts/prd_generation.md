@@ -159,7 +159,7 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 
 ---
 
-## Hard Output Rules (ALL 17 — MUST ENFORCE)
+## Hard Output Rules (ALL 18 — MUST ENFORCE)
 
 1. **SP arithmetic must add up** across all tables (stories→epics→total)
 2. No self-referencing dependencies
@@ -173,11 +173,17 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 10. Verification metrics labeled "projected" with disclaimer
 11. FR traceability — every FR traces to source finding
 12. Clean Architecture in Technical Spec — show module structure and real file paths
-13. Post-generation self-check — verify all 17 rules BLOCKING before finishing
+13. Post-generation self-check — verify all 18 rules BLOCKING before finishing
 14. Mandatory codebase analysis — reference actual files from integration plan
 15. Honest verification verdicts (5-level taxonomy)
 16. Code examples use injected interfaces (not framework globals)
 17. Test traceability integrity — matrix matches test code
+18. **Generic over specific** — Technical Spec MUST design for the general class of
+    problem, not just the immediate finding. Parameters over hardcoded values, composable
+    mechanisms over single-purpose fields, reusable abstractions over one-off fixes.
+    If the finding is "fix subtitle width", the spec should enable "configure any text
+    element's width". Flag narrow solutions that would require reopening shared code
+    for the next similar request.
 
 ---
 
@@ -189,7 +195,7 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 4. Write `prd-jira.md` with epics, stories, SP, and AC references
 5. Write `prd-tests.md` with real test implementations
 6. Write `prd-verification.md` with `**Overall Score:** NN%`
-7. Run self-check against all 17 hard output rules
+7. Run self-check against all 18 hard output rules
 8. Output JSON summary:
 
 {{PRD_SUMMARY_SCHEMA}}

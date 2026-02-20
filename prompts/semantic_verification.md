@@ -60,6 +60,19 @@ Check for these PROHIBITED patterns (from prohibited_patterns.txt):
 - No placeholder test bodies (SKILL.md Rule 7)?
 - Test IDs use UT-/IT-/E2E- prefixes?
 
+### 6. Solution Genericity & Scalability
+Flag as WARNING if any of these apply:
+- Caller-specific constants hardcoded in shared/library code (should be parameters)
+- Single-purpose parameters that only solve one caller's need when a general mechanism
+  would serve multiple callers at equivalent cost
+- Naming that references a specific bug/finding instead of the general capability
+- Code duplication that could be a reusable utility
+- Solution that would require re-opening the shared component if a second caller
+  has a similar but slightly different need
+
+Ask: "If three more teams hit a similar problem, would this implementation handle
+their cases without further changes to the shared code?" If not, flag it.
+
 ## Output Format
 You MUST output a single JSON object (no markdown, no explanation before it).
 Write it as the LAST line of your response, parseable by the orchestrator:

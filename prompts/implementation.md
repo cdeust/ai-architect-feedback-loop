@@ -38,6 +38,20 @@ architecture), and the manifest (hard file constraints from the dependency graph
 5. New test files under the relevant module's test directory are allowed
 6. All code must compile/pass linting and pass tests
 
+## Solution Design Quality
+Write code that is GENERIC and SCALABLE, not just correct for this one finding:
+
+1. **No magic constants in shared code** — caller-specific values (e.g., `265.dp`) belong
+   in the caller, not in the shared component. Shared code accepts parameters.
+2. **General mechanisms over single-purpose fields** — if the PRD specifies a narrow
+   parameter, implement it, but consider whether a more general abstraction (e.g., a
+   constraints object, a modifier override, a strategy pattern) would serve the component
+   better long-term. If a more general approach is equivalent effort, prefer it.
+3. **Reusable utilities** — if you write a helper, make it usable by other modules too.
+   Don't scope utilities to one call site.
+4. **Naming reflects generality** — name parameters/methods for what they DO, not for
+   the specific bug they fix. `textWidth` is better than `subtitleFixWidth`.
+
 ## Build & Test Commands
 {{BUILD_COMMANDS}}
 

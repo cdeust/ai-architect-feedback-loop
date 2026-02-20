@@ -19,6 +19,25 @@ that work WITHIN the existing architecture -- never violating the dependency gra
 ## Current File Structure
 {{FILE_TREE}}
 
+## Design Principles (MANDATORY)
+Design for GENERICITY over specificity. Every modification should be reusable beyond
+the immediate finding. Apply these principles in order:
+
+1. **Parameterize, don't hardcode** — if a value is specific to one caller, make it a
+   configurable parameter with a sensible default. Never embed caller-specific constants
+   in shared components.
+2. **Extend the abstraction, not just the API** — when adding a capability, ask: "What is
+   the general class of problem this solves?" Design for that class, not the single instance.
+3. **Compose over specialize** — prefer composable building blocks (e.g., a general
+   constraint/override mechanism) over single-purpose parameters that only solve today's case.
+4. **Think one level up** — if the finding asks to fix width for a subtitle, design a
+   solution that could handle width for any text element in the component.
+5. **Backward compatibility via defaults** — generic parameters must default to existing
+   behavior so zero callers break.
+
+When designing modifications, evaluate: "If three more teams hit a similar problem next
+quarter, would this design handle their cases without further changes?" If not, redesign.
+
 ## Anti-Bolt-On Constraints (MANDATORY)
 1. NO new top-level modules -- use existing modules only
 2. NO new standalone source files that don't implement an existing interface or extend an existing type
