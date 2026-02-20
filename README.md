@@ -266,9 +266,9 @@ make uninstall-scheduler      # Remove the scheduler
 
 ## Quality enforcement
 
-The pipeline enforces **24 hard output rules** across PRD generation, implementation, and verification. These rules are stack-agnostic and ensure every generated artifact meets production-quality standards.
+The pipeline enforces **64 hard output rules** across PRD generation, implementation, and verification. These rules are stack-agnostic and ensure every generated artifact meets production-quality standards expected by senior engineers, compliance officers, and security teams.
 
-### PRD quality rules (1-18)
+### Core PRD rules (1-17)
 
 Rules enforced during Stage 4 PRD generation:
 
@@ -285,26 +285,104 @@ Rules enforced during Stage 4 PRD generation:
 | 9. Uneven SP Distribution | Sprints must reflect real complexity differences |
 | 10. Metrics Disclaimer | Verification metrics labeled as "projected" |
 | 11. FR Traceability | Every requirement traces to a concrete source |
-| 12. Clean Architecture | Technical spec must show ports/adapters structure |
-| 13. Self-Check | Post-generation verification of all 24 rules |
+| 12. Clean Architecture | Technical spec must show module structure and real file paths |
+| 13. Self-Check | Post-generation verification of all 64 rules |
 | 14. Codebase Analysis | Must reference actual files from integration plan |
-| 15. Honest Verdicts | 5-level taxonomy (PASS / SPEC-COMPLETE / NEEDS-RUNTIME / INCONCLUSIVE / FAIL) |
+| 15. Honest Verdicts | 5-level taxonomy (STRONG_PASS / PASS / MARGINAL / WEAK / FAIL) |
 | 16. Port Compliance | Code examples use injected interfaces, not framework globals |
 | 17. Test Traceability | Every test in the matrix must exist with a real body |
-| 18. Generic Over Specific | Solutions must be parameterized and scalable, not single-purpose |
 
-### Code quality rules (19-24)
-
-Rules enforced in the technical specification to ensure implementation quality:
+### Architecture & code quality rules (18-24)
 
 | Rule | What it enforces |
 |---|---|
+| 18. Generic Over Specific | Solutions must be parameterized and scalable, not single-purpose |
 | 19. No Nested Types | Every struct/class/enum must be a top-level declaration |
 | 20. Single Responsibility | Each class has one reason to change, max ~50 lines in examples |
 | 21. Explicit Access Control | Visibility modifiers required, minimal public API surface |
 | 22. Factory-Based Injection | Dependencies wired through factories/DI, not direct instantiation |
 | 23. SOLID Compliance | Single responsibility, open/closed, and dependency inversion enforced |
 | 24. Code Reusability | Shared utilities over duplication, consistent naming conventions |
+
+### Security rules (25-32)
+
+| Rule | What it enforces |
+|---|---|
+| 25. No Hardcoded Secrets | No credentials, API keys, or tokens in code — use env vars, vault, or secret managers |
+| 26. Input Validation | Validate and sanitize every external input at system boundaries |
+| 27. Injection Prevention | Parameterized queries only, output encoding for XSS, no string concatenation in queries |
+| 28. Auth on Every Endpoint | Every operation specifies authentication method, roles, and permission checks |
+| 29. Security-Safe Errors | Error responses never leak stack traces, internal paths, or DB schemas |
+| 30. Cryptographic Standards | AES-256+ encryption, bcrypt/argon2 for passwords, no MD5/SHA-1/DES |
+| 31. Rate Limiting | Throttling strategy for all public-facing endpoints |
+| 32. Secure Communication | TLS requirements, certificate management, encrypted data in transit |
+
+### Data protection & compliance rules (33-38)
+
+| Rule | What it enforces |
+|---|---|
+| 33. Data Classification | Every data entity classified by sensitivity (public/internal/confidential/restricted) |
+| 34. PII & Sensitive Data Protection | Encryption at rest, masking in non-prod, anonymization — at least 2 of 3 strategies |
+| 35. No Sensitive Data in Logs | PII, credentials, and tokens never appear in log output, error responses, or URLs |
+| 36. Data Minimization | Collect only what's necessary, justify each sensitive field with a clear purpose |
+| 37. Audit Trail | Who/what/when logging for all security-sensitive operations |
+| 38. Consent & Erasure | Data model supports consent tracking, deletion cascades, GDPR/CCPA compliance |
+
+### Error handling & resilience rules (39-43)
+
+| Rule | What it enforces |
+|---|---|
+| 39. Structured Error Handling | Domain-specific error types, no swallowed exceptions, explicit propagation strategy |
+| 40. Resilience Patterns | Circuit breaker, retry with exponential backoff, timeout on every external call |
+| 41. Graceful Degradation | Fallback behavior when dependencies fail, no cascading failures |
+| 42. Transaction Boundaries | Scope, isolation level, rollback strategy for multi-step operations |
+| 43. Consistent Error Format | Standardized error response structure (RFC 7807 or equivalent) |
+
+### Concurrency & state management rules (44-46)
+
+| Rule | What it enforces |
+|---|---|
+| 44. Concurrency Safety | Shared mutable state protected, thread safety guarantees, race condition prevention |
+| 45. Immutability by Default | Prefer immutable data structures, mutable state explicitly justified |
+| 46. Atomic Operations | Multi-step state changes must be atomic with defined isolation |
+
+### Senior code quality rules (47-52)
+
+| Rule | What it enforces |
+|---|---|
+| 47. No Magic Numbers | All literal values in code must be named constants |
+| 48. Defensive Coding | Guard clauses, preconditions, null safety, fail fast on invalid state |
+| 49. Method Size Limits | No function exceeds ~30 lines in code examples |
+| 50. Consistent Naming | Established casing style, descriptive names, no abbreviations in public APIs |
+| 51. API Contract Documentation | Every endpoint has typed request/response schemas, status codes, error responses |
+| 52. Deprecation Strategy | Breaking changes specify migration path, sunset timeline, versioning approach |
+
+### Comprehensive testing rules (53-58)
+
+| Rule | What it enforces |
+|---|---|
+| 53. Mandatory Test Coverage | Every public method/endpoint has test specifications with coverage targets |
+| 54. Security Testing | SAST/DAST, dependency vulnerability scanning, penetration test plan, OWASP test cases |
+| 55. Performance Testing | Load test scenarios, stress thresholds, baseline comparisons, latency percentile targets |
+| 56. No Production Data in Tests | All test data must be synthetic/anonymized — no real PII in test fixtures |
+| 57. Edge Case & Negative Tests | Tests cover failure scenarios, boundary values, invalid inputs, concurrent operations |
+| 58. Test Isolation | No shared mutable state between tests, proper setup/teardown, independent execution |
+
+### Observability & monitoring rules (59-62)
+
+| Rule | What it enforces |
+|---|---|
+| 59. Structured Logging | JSON format, log levels (DEBUG/INFO/WARN/ERROR), what to log at each level |
+| 60. Distributed Tracing | Correlation IDs, trace context propagation across services |
+| 61. No PII in Observability | Logs, metrics, and traces must not contain sensitive personal data |
+| 62. Alerting Thresholds | Alert triggers, severity levels, escalation paths, on-call routing |
+
+### Dependency & supply chain rules (63-64)
+
+| Rule | What it enforces |
+|---|---|
+| 63. Dependency Vulnerability Scanning | SCA tooling (Snyk, Dependabot, Trivy) required in CI/CD pipeline |
+| 64. Minimal Dependency Principle | New dependencies justified, prefer standard library, license compliance verified |
 
 ### Design principles in implementation
 
@@ -406,10 +484,10 @@ Computes a compound impact score across four dimensions: modules affected, propa
 Designs architectural modifications respecting the target product's architecture. Enforces [design principles](#design-principles-in-implementation): parameterization, centralization, composability, backward compatibility. Validates that all referenced files exist and interface changes are consistent.
 
 ### Stage 4 — PRD generation
-Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd-verification.md`, `prd-jira.md`, and `prd-tests.md`. Enforces all [24 hard output rules](#quality-enforcement). Scope (simple/moderate/complex) is derived automatically from pipeline artifacts.
+Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd-verification.md`, `prd-jira.md`, and `prd-tests.md`. Enforces all [64 hard output rules](#quality-enforcement). Scope (simple/moderate/complex) is derived automatically from pipeline artifacts.
 
 ### Stage 5 — Implementation
-Creates a feature branch, implements code changes following the PRD and integration plan, builds the project, and runs tests. Enforces [code quality rules](#code-quality-rules-19-24): no nested types, single responsibility, factory-based injection, SOLID compliance, reusable and readable code.
+Creates a feature branch, implements code changes following the PRD and integration plan, builds the project, and runs tests. Enforces [code quality rules](#architecture--code-quality-rules-18-24), [security rules](#security-rules-25-32), [resilience rules](#error-handling--resilience-rules-39-43), and [testing rules](#comprehensive-testing-rules-53-58).
 
 ### Stage 6 — Quality gates
 Runs deterministic checks: prohibited pattern detection, orphan file detection, build verification, test suite, and deployment verification.
@@ -443,7 +521,7 @@ Creates a pull request per finding with a structured description linking back to
 ├── prompts/                       # Stage prompt templates
 │   ├── impact_analysis.md
 │   ├── integration_design.md      # Includes design principles (parameterization, genericity)
-│   ├── prd_generation.md          # Enforces 24 hard output rules
+│   ├── prd_generation.md          # Enforces 64 hard output rules
 │   ├── implementation.md          # Solution design quality requirements
 │   └── semantic_verification.md   # Genericity & scalability verification
 ├── scripts/                       # Stage scripts, validators, processors
@@ -488,7 +566,7 @@ The files in `prompts/` use `{{ARCHITECTURE_DESCRIPTION}}` and other placeholder
 
 Each prompt template enforces quality standards:
 - **Integration design** — Design principles: parameterize, extend abstractions, compose, think one level up, backward compatibility via defaults
-- **PRD generation** — 24 hard output rules: SP arithmetic, clean architecture, SOLID compliance, no nested types, factory injection, code reusability, and more
+- **PRD generation** — 64 hard output rules: SP arithmetic, clean architecture, SOLID compliance, security hardening, data protection, resilience patterns, concurrency safety, observability, and more
 - **Implementation** — Solution design quality: no magic constants, general mechanisms, reusable utilities, generic naming
 - **Semantic verification** — Adversarial review: solution genericity, scalability, cross-module integration, anti-pattern detection
 

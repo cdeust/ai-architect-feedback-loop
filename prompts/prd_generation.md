@@ -150,7 +150,7 @@ PRD File: prd.md
 [repeat for each section]
 
 ## Hard Output Rules Compliance
-[Check each of the 17 rules below]
+[Check each of the 64 rules below]
 ```
 
 **The `**Overall Score:** NN%` line is MANDATORY — the pipeline parses it.**
@@ -159,7 +159,9 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 
 ---
 
-## Hard Output Rules (ALL 24 — MUST ENFORCE)
+## Hard Output Rules (ALL 64 — MUST ENFORCE)
+
+### Core PRD Rules (1-17)
 
 1. **SP arithmetic must add up** across all tables (stories→epics→total)
 2. No self-referencing dependencies
@@ -173,11 +175,14 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 10. Verification metrics labeled "projected" with disclaimer
 11. FR traceability — every FR traces to source finding
 12. Clean Architecture in Technical Spec — show module structure and real file paths
-13. Post-generation self-check — verify all 24 rules BLOCKING before finishing
+13. Post-generation self-check — verify all 64 rules BLOCKING before finishing
 14. Mandatory codebase analysis — reference actual files from integration plan
 15. Honest verification verdicts (5-level taxonomy)
 16. Code examples use injected interfaces (not framework globals)
 17. Test traceability integrity — matrix matches test code
+
+### Architecture & Code Quality Rules (18-24)
+
 18. **Generic over specific** — Technical Spec MUST design for the general class of
     problem, not just the immediate finding. Parameters over hardcoded values, composable
     mechanisms over single-purpose fields, reusable abstractions over one-off fixes.
@@ -198,6 +203,121 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 24. **Code reusability & readability** — Shared utilities over duplication, descriptive naming,
     consistent patterns. If the same logic appears in two places, extract it.
 
+### Security Rules (25-32)
+
+25. **No hardcoded secrets** — Code examples MUST NOT contain hardcoded credentials, API keys,
+    tokens, passwords, or connection strings. Use environment variables, secret managers, or
+    configuration injection. Never embed secrets directly in code.
+26. **Input validation at all boundaries** — Every external input (API request, user input, file
+    upload, webhook) MUST specify validation and sanitization rules. No raw data flows into
+    business logic unvalidated.
+27. **Output encoding & injection prevention** — Spec MUST address XSS prevention (output encoding),
+    SQL injection prevention (parameterized queries only), and command injection prevention. No
+    string concatenation in queries.
+28. **Authentication & authorization on every endpoint** — Every operation MUST specify authentication
+    method (JWT, OAuth2, API key, etc.), required roles/permissions, and access control model
+    (RBAC/ABAC). Principle of least privilege.
+29. **Security-safe error handling** — Error responses MUST NOT leak stack traces, internal file paths,
+    database schemas, server versions, or implementation details. Separate internal logs from
+    client-facing error messages.
+30. **Cryptographic standards** — No weak algorithms (MD5, SHA-1, DES, RC4). Specify minimum standards:
+    AES-256 for encryption, bcrypt/argon2 for passwords, SHA-256+ for hashing. Define key rotation
+    and management strategy.
+31. **Rate limiting on public endpoints** — All public-facing endpoints MUST specify rate limiting
+    strategy: requests per user/IP, throttling behavior, burst limits, and abuse prevention.
+32. **Secure communication** — Specify TLS requirements for all data in transit, certificate
+    validation, no mixed content. All API communication over HTTPS.
+
+### Data Protection & Compliance Rules (33-38)
+
+33. **Data classification required** — Every data entity MUST be classified by sensitivity level
+    (public/internal/confidential/restricted) with specific handling rules per classification.
+34. **PII & sensitive data protection** — Sensitive data MUST specify: encryption at rest,
+    masking/anonymization strategy, pseudonymization approach, and field-level access restrictions.
+    Address at least 2 of: encryption, masking, access control.
+35. **No sensitive data in logs/errors/URLs** — PII, credentials, and tokens MUST NOT appear in log
+    output, error responses, query parameters, or URLs. Specify log sanitization strategy.
+36. **Data minimization** — Collect and store only what's necessary. Every sensitive field MUST be
+    justified with a clear purpose. Define purpose limitation.
+37. **Audit trail for sensitive operations** — Security-sensitive operations (auth events, data access,
+    config changes, admin actions) MUST include audit logging: who/what/when/where.
+38. **Consent & erasure support** — Data model MUST support consent tracking, deletion cascades, and
+    right to be forgotten (GDPR/CCPA compliance). Specify how erasure propagates through the system.
+
+### Error Handling & Resilience Rules (39-43)
+
+39. **Structured error handling** — Define domain-specific error types with error hierarchies. No
+    swallowed exceptions, no generic catch-all without rethrow. Explicit error propagation strategy
+    from every layer.
+40. **Resilience patterns required** — External dependencies MUST have: circuit breaker for failure
+    isolation, retry with exponential backoff, and timeout on every external call. Specify failure
+    thresholds.
+41. **Graceful degradation** — Spec MUST define fallback behavior when dependencies fail. No cascading
+    failures. Define degraded operation modes and what features remain available.
+42. **Transaction boundaries & rollback** — Data operations MUST specify transaction scope, isolation
+    level, rollback strategy, and idempotency for multi-step operations. Use sagas for distributed
+    transactions.
+43. **Consistent error response format** — All APIs MUST use a standardized error structure with error
+    codes, human-readable messages, and machine-readable details (e.g., RFC 7807 Problem Details).
+
+### Concurrency & State Management Rules (44-46)
+
+44. **Concurrency safety** — Shared mutable state MUST be protected. Spec MUST address thread safety
+    guarantees, race condition prevention, and deadlock avoidance. Use actors, locks, or channels as
+    appropriate.
+45. **Immutability by default** — Prefer immutable data structures (value types, const/let/val). Any
+    mutable state MUST be explicitly justified with a clear reason.
+46. **Atomic operations & transaction isolation** — Multi-step state changes MUST be atomic. Specify
+    transaction isolation levels and optimistic/pessimistic concurrency control strategy.
+
+### Senior Code Quality Standards (47-52)
+
+47. **No magic numbers/strings** — ALL literal values in code examples MUST be named constants. No raw
+    numbers or string literals in business logic. Use MAX_RETRY_COUNT, DEFAULT_TIMEOUT_MS, etc.
+48. **Defensive coding** — Guard clauses, preconditions, null safety, and bounds checking at ALL entry
+    points. Fail fast on invalid state. Validate assumptions explicitly.
+49. **Method/function size limits** — No function in code examples should exceed ~30 lines. Extract
+    complex logic into well-named helper functions.
+50. **Consistent naming conventions** — Establish casing style (camelCase, snake_case, etc.), use
+    descriptive names, avoid abbreviations in public APIs, enforce consistent patterns.
+51. **API contract documentation** — Every endpoint MUST have typed request/response schemas, status
+    codes, error responses, and content-type specifications documented.
+52. **Deprecation strategy** — Breaking changes MUST specify migration path, sunset timeline, and
+    versioning approach. Define backward compatibility strategy.
+
+### Comprehensive Testing Rules (53-58)
+
+53. **Mandatory test coverage for all public APIs** — Every public method/endpoint MUST have
+    corresponding test specifications. Define coverage targets for unit, integration, and overall.
+54. **Security testing requirements** — Test spec MUST include SAST/DAST, dependency vulnerability
+    scanning, penetration test plan, and OWASP-based test cases.
+55. **Performance & load testing** — Define load test scenarios, stress thresholds, baseline
+    comparisons, and latency percentile targets (p95, p99).
+56. **No production data in tests** — ALL test data MUST be synthetic/anonymized. No real PII in test
+    fixtures. Use factories, fakers, and seed data generators.
+57. **Edge case & negative path testing** — Tests MUST cover failure scenarios, boundary values,
+    invalid inputs, unauthorized access, and concurrent operations — not just happy paths.
+58. **Test isolation** — No shared mutable state between tests. Proper setup/teardown. Each test
+    independent and repeatable in any order.
+
+### Observability & Monitoring Rules (59-62)
+
+59. **Structured logging with levels** — Define log format (JSON/structured), log levels
+    (DEBUG/INFO/WARN/ERROR), and what to log at each level. No unstructured print statements.
+60. **Distributed tracing** — Specify correlation IDs for cross-service request tracking, trace
+    context propagation, and observability platform integration.
+61. **No PII in observability** — Logs, metrics, traces, and dashboards MUST NOT contain sensitive
+    personal data. Specify masking/redaction strategy for observability pipelines.
+62. **Alerting thresholds & escalation** — Define what triggers alerts, severity levels, escalation
+    paths, on-call routing, and runbook references.
+
+### Dependency & Supply Chain Rules (63-64)
+
+63. **Dependency vulnerability scanning** — Spec MUST require SCA tooling (Snyk, Dependabot, Trivy)
+    for automated vulnerability detection. CVE monitoring in CI/CD pipeline.
+64. **Minimal dependency principle** — New dependencies MUST be justified. Prefer standard library.
+    Verify license compliance. Define dependency review and approval process.
+
 ---
 
 ## Execution Instructions
@@ -208,7 +328,7 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 4. Write `prd-jira.md` with epics, stories, SP, and AC references
 5. Write `prd-tests.md` with real test implementations
 6. Write `prd-verification.md` with `**Overall Score:** NN%`
-7. Run self-check against all 24 hard output rules
+7. Run self-check against all 64 hard output rules
 8. Output JSON summary:
 
 {{PRD_SUMMARY_SCHEMA}}
