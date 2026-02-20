@@ -2,7 +2,7 @@
 
 A fully autonomous 10-stage product improvement pipeline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). It analyzes code findings, generates PRDs, implements fixes, enforces quality gates, and delivers pull requests — all through a single `/run-pipeline` slash command with zero human intervention.
 
-Works with **any tech stack** — Python, TypeScript, Go, Rust, Java, Swift, and more — through configuration alone.
+Works with **any tech stack** — Python, TypeScript, Go, Rust, Java, Kotlin, Swift, and more — through configuration alone.
 
 **Author:** Clement DEUST — [ai-architect.tools](https://ai-architect.tools)
 
@@ -264,6 +264,60 @@ make install-scheduler        # Install launchd agent (runs at 2 AM)
 make uninstall-scheduler      # Remove the scheduler
 ```
 
+## Quality enforcement
+
+The pipeline enforces **24 hard output rules** across PRD generation, implementation, and verification. These rules are stack-agnostic and ensure every generated artifact meets production-quality standards.
+
+### PRD quality rules (1-18)
+
+Rules enforced during Stage 4 PRD generation:
+
+| Rule | What it enforces |
+|---|---|
+| 1. SP Arithmetic | Story points must add up across stories, epics, and totals |
+| 2. No Self-Referencing Deps | No item depends on itself |
+| 3. AC Numbering | Acceptance criteria numbered consistently across all files |
+| 4. No Orphan DDL | Every CREATE TYPE must be referenced by a table |
+| 5. No NOW() in Indexes | Volatile functions forbidden in partial index predicates |
+| 6. No AnyCodable | Concrete types only — no type-erased wrappers |
+| 7. No Placeholder Tests | Every test must have a real implementation body |
+| 8. SP Not in FR Table | Story points belong in roadmap and JIRA only |
+| 9. Uneven SP Distribution | Sprints must reflect real complexity differences |
+| 10. Metrics Disclaimer | Verification metrics labeled as "projected" |
+| 11. FR Traceability | Every requirement traces to a concrete source |
+| 12. Clean Architecture | Technical spec must show ports/adapters structure |
+| 13. Self-Check | Post-generation verification of all 24 rules |
+| 14. Codebase Analysis | Must reference actual files from integration plan |
+| 15. Honest Verdicts | 5-level taxonomy (PASS / SPEC-COMPLETE / NEEDS-RUNTIME / INCONCLUSIVE / FAIL) |
+| 16. Port Compliance | Code examples use injected interfaces, not framework globals |
+| 17. Test Traceability | Every test in the matrix must exist with a real body |
+| 18. Generic Over Specific | Solutions must be parameterized and scalable, not single-purpose |
+
+### Code quality rules (19-24)
+
+Rules enforced in the technical specification to ensure implementation quality:
+
+| Rule | What it enforces |
+|---|---|
+| 19. No Nested Types | Every struct/class/enum must be a top-level declaration |
+| 20. Single Responsibility | Each class has one reason to change, max ~50 lines in examples |
+| 21. Explicit Access Control | Visibility modifiers required, minimal public API surface |
+| 22. Factory-Based Injection | Dependencies wired through factories/DI, not direct instantiation |
+| 23. SOLID Compliance | Single responsibility, open/closed, and dependency inversion enforced |
+| 24. Code Reusability | Shared utilities over duplication, consistent naming conventions |
+
+### Design principles in implementation
+
+Stage 5 (Implementation) and Stage 7 (Verification) enforce scalable design:
+
+- **Parameterize, don't hardcode** — caller-specific values belong in the caller, not in shared code
+- **Centralize decisions** — one change should propagate everywhere, not require editing 500 files
+- **Compose over specialize** — prefer composable building blocks over single-purpose parameters
+- **Backward compatibility via defaults** — new parameters must default to existing behavior
+- **Scalability test** — "If three more teams hit a similar problem, would this design handle their cases without changes?"
+
+Stage 7 independently flags violations: hardcoded constants in shared code, single-purpose parameters, bug-specific naming, code duplication, and non-extensible shared components.
+
 ## Findings input format
 
 The pipeline consumes **findings** — structured items describing issues, improvements, or changes to analyze and implement. Findings can come from any source: code analysis tools, draft specs, design reviews, bug reports, or manual entries.
@@ -349,19 +403,19 @@ Reads the input JSON, filters findings by relevance category and score threshold
 Computes a compound impact score across four dimensions: modules affected, propagation depth, contract impact, and test coverage delta. Findings must score above 0.3 and affect at least 2 modules to proceed.
 
 ### Stage 3 — Integration design
-Designs architectural modifications respecting the target product's architecture. Validates that all referenced files exist and interface changes are consistent.
+Designs architectural modifications respecting the target product's architecture. Enforces [design principles](#design-principles-in-implementation): parameterization, centralization, composability, backward compatibility. Validates that all referenced files exist and interface changes are consistent.
 
 ### Stage 4 — PRD generation
-Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd-verification.md`, `prd-jira.md`, and `prd-tests.md`. Scope (simple/moderate/complex) is derived automatically from pipeline artifacts.
+Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd-verification.md`, `prd-jira.md`, and `prd-tests.md`. Enforces all [24 hard output rules](#quality-enforcement). Scope (simple/moderate/complex) is derived automatically from pipeline artifacts.
 
 ### Stage 5 — Implementation
-Creates a feature branch, implements code changes following the PRD and integration plan, builds the project, and runs tests.
+Creates a feature branch, implements code changes following the PRD and integration plan, builds the project, and runs tests. Enforces [code quality rules](#code-quality-rules-19-24): no nested types, single responsibility, factory-based injection, SOLID compliance, reusable and readable code.
 
 ### Stage 6 — Quality gates
 Runs deterministic checks: prohibited pattern detection, orphan file detection, build verification, test suite, and deployment verification.
 
 ### Stage 7 — Semantic verification
-An independent verifier analyzes the git diff against the PRD. Checks alignment score (must be >= 0.7), cross-module consistency, and anti-patterns.
+An independent verifier analyzes the git diff against the PRD. Checks alignment score (must be >= 0.7), cross-module consistency, anti-patterns, and [solution genericity](#design-principles-in-implementation) — flags hardcoded constants, single-purpose parameters, and non-extensible designs.
 
 ### Stage 8 — Benchmark
 Measures quality metrics and compares against baselines. Informational — does not block the pipeline.
@@ -388,10 +442,10 @@ Creates a pull request per finding with a structured description linking back to
 │   └── prohibited_patterns.txt    # Anti-pattern regex rules
 ├── prompts/                       # Stage prompt templates
 │   ├── impact_analysis.md
-│   ├── integration_design.md
-│   ├── prd_generation.md
-│   ├── implementation.md
-│   └── semantic_verification.md
+│   ├── integration_design.md      # Includes design principles (parameterization, genericity)
+│   ├── prd_generation.md          # Enforces 24 hard output rules
+│   ├── implementation.md          # Solution design quality requirements
+│   └── semantic_verification.md   # Genericity & scalability verification
 ├── scripts/                       # Stage scripts, validators, processors
 │   ├── pipeline.sh                # Main orchestrator
 │   ├── load_project_config.py     # Shared config loader
@@ -431,6 +485,12 @@ Customize these files in `config/` to match your product:
 ### Prompt templates
 
 The files in `prompts/` use `{{ARCHITECTURE_DESCRIPTION}}` and other placeholders that are populated from your configuration. They are stack-agnostic by default — no language-specific content needs to be changed.
+
+Each prompt template enforces quality standards:
+- **Integration design** — Design principles: parameterize, extend abstractions, compose, think one level up, backward compatibility via defaults
+- **PRD generation** — 24 hard output rules: SP arithmetic, clean architecture, SOLID compliance, no nested types, factory injection, code reusability, and more
+- **Implementation** — Solution design quality: no magic constants, general mechanisms, reusable utilities, generic naming
+- **Semantic verification** — Adversarial review: solution genericity, scalability, cross-module integration, anti-pattern detection
 
 ## Troubleshooting
 
