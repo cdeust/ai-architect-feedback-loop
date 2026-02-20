@@ -159,7 +159,7 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 
 ---
 
-## Hard Output Rules (ALL 18 — MUST ENFORCE)
+## Hard Output Rules (ALL 24 — MUST ENFORCE)
 
 1. **SP arithmetic must add up** across all tables (stories→epics→total)
 2. No self-referencing dependencies
@@ -173,7 +173,7 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 10. Verification metrics labeled "projected" with disclaimer
 11. FR traceability — every FR traces to source finding
 12. Clean Architecture in Technical Spec — show module structure and real file paths
-13. Post-generation self-check — verify all 18 rules BLOCKING before finishing
+13. Post-generation self-check — verify all 24 rules BLOCKING before finishing
 14. Mandatory codebase analysis — reference actual files from integration plan
 15. Honest verification verdicts (5-level taxonomy)
 16. Code examples use injected interfaces (not framework globals)
@@ -184,6 +184,19 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
     If the finding is "fix subtitle width", the spec should enable "configure any text
     element's width". Flag narrow solutions that would require reopening shared code
     for the next similar request.
+19. **No nested types** — Code examples MUST NOT contain nested struct/class/enum/interface
+    declarations. Every type is a top-level declaration. Nested types reduce readability,
+    prevent reuse, and make testing harder.
+20. **Single responsibility** — Each class/struct has one reason to change. Code examples
+    MUST NOT show classes exceeding ~50 lines. The spec MUST discuss separation of concerns.
+21. **Explicit access control** — Define what is public vs private. Use access modifiers,
+    minimize exposed API surface, enforce encapsulation.
+22. **Factory-based injection** — Dependencies injected through factories or DI containers,
+    NEVER instantiated directly in business logic. Spec MUST show how dependencies are wired.
+23. **SOLID compliance** — Single responsibility, open/closed (extensible without modification),
+    and dependency inversion (depend on abstractions, not concretions) at minimum.
+24. **Code reusability & readability** — Shared utilities over duplication, descriptive naming,
+    consistent patterns. If the same logic appears in two places, extract it.
 
 ---
 
@@ -195,7 +208,7 @@ Use honest 5-level verdict taxonomy: STRONG_PASS, PASS, MARGINAL, WEAK, FAIL.
 4. Write `prd-jira.md` with epics, stories, SP, and AC references
 5. Write `prd-tests.md` with real test implementations
 6. Write `prd-verification.md` with `**Overall Score:** NN%`
-7. Run self-check against all 18 hard output rules
+7. Run self-check against all 24 hard output rules
 8. Output JSON summary:
 
 {{PRD_SUMMARY_SCHEMA}}
