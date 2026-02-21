@@ -21,23 +21,21 @@ You can obtain a license at [ai-architect.tools](https://ai-architect.tools). Th
 git clone <this-repo-url>
 cd feedback-loop
 
-# 2. Install your AI PRD Generator license key
-mkdir -p ~/.aiprd
-echo "YOUR_LICENSE_KEY" > ~/.aiprd/license-key
-
-# 3. Point the pipeline at your target product
+# 2. Point the pipeline at your target product
 export PIPELINE_BUILDER="/absolute/path/to/your-product"
 
-# 4. Configure for your stack (see Configuration below)
-# Edit config/project.json and config/architecture.md
+# 3. Run the setup wizard (auto-detects language, modules, branches)
+make setup
 
-# 5. Verify everything is ready
-make pipeline-health-check
+# 4. Verify everything is ready
+make pipeline-health
 
-# 6. Run the pipeline
+# 5. Run the pipeline
 claude                  # launch Claude Code
 /run-pipeline           # type this in the Claude Code session
 ```
+
+The setup wizard detects your project language, module structure, build/test commands, and git conventions. It also handles license key installation and generates `config/pipeline.yml` — the single source of truth for all pipeline settings.
 
 ## Prerequisites
 
@@ -45,6 +43,7 @@ claude                  # launch Claude Code
 |---|---|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | CLI must be installed and authenticated |
 | Python 3.10+ | Used by validators and scoring scripts |
+| PyYAML | `pip install pyyaml` — used by the config resolver |
 | `jq` | JSON processing in stage scripts |
 | `gh` | GitHub CLI — for PR creation (Stage 10). Run `gh auth login` first. |
 | `git` | Repository operations |
@@ -52,14 +51,37 @@ claude                  # launch Claude Code
 
 ## Setup
 
-### 1. Clone the repository
+### Option A: Setup wizard (recommended)
+
+The interactive wizard auto-detects your project settings and generates all configuration:
+
+```bash
+# Set your target project
+export PIPELINE_BUILDER="/absolute/path/to/your-product"
+
+# Run the wizard
+make setup
+```
+
+The wizard will:
+1. Detect your project language (Python, TypeScript, Swift, Go, Rust)
+2. Find your modules/packages directory and build a dependency graph
+3. Detect build and test commands from Makefile/package.json
+4. Detect the default git branch
+5. Validate or install your AIPRD license key
+6. Ask about git conventions (branch naming, commit format, PR labels)
+7. Generate `config/pipeline.yml` and all individual config files
+
+### Option B: Manual setup
+
+#### 1. Clone the repository
 
 ```bash
 git clone <this-repo-url>
 cd feedback-loop
 ```
 
-### 2. Install your license key
+#### 2. Install your license key
 
 Get a key from [ai-architect.tools](https://ai-architect.tools), then:
 
@@ -68,9 +90,7 @@ mkdir -p ~/.aiprd
 echo "YOUR_LICENSE_KEY" > ~/.aiprd/license-key
 ```
 
-### 3. Set the target product path
-
-The pipeline needs to know where your target product repository lives. Set the `PIPELINE_BUILDER` environment variable to its **absolute path**:
+#### 3. Set the target product path
 
 ```bash
 export PIPELINE_BUILDER="/absolute/path/to/your-product"
@@ -87,128 +107,104 @@ The target product repository must:
 - Be a git repository
 - Optionally have a `CLAUDE.md` file describing its architecture (enriches Stages 3, 5, and 7)
 
-### 4. Configure for your stack
+#### 4. Configure for your stack
 
-The pipeline is stack-agnostic. Configure it for your project through two files:
+Edit `config/pipeline.yml` (or copy from `config/pipeline.yml.example`). This single file controls all pipeline settings. See [Unified Configuration](#unified-configuration-pipelineyml) for the full schema.
 
-#### `config/project.json` — Project settings
+If you prefer, you can also edit the individual config files directly — the pipeline reads them with or without `pipeline.yml`.
 
-This file tells the pipeline about your language, build tools, and project structure:
-
-```json
-{
-  "language": "python",
-  "source_extensions": [".py"],
-  "test_file_patterns": ["**/test_*.py", "**/*_test.py"],
-  "test_dir_name": "tests",
-  "module_prefix": "",
-  "modules_dir": "packages",
-  "domain_module": null,
-  "interface_suffix": null,
-  "base_branch": "main",
-  "build_command": "make build",
-  "test_command": "make test",
-  "deploy_command": null,
-  "required_tools": ["python3", "git", "gh", "jq", "claude"],
-  "contract_extractor": null
-}
-```
-
-| Field | Description |
-|---|---|
-| `language` | Primary language (`python`, `typescript`, `swift`, `go`, `kotlin`, `java`, etc.) |
-| `source_extensions` | File extensions to scan (e.g. `[".py"]`, `[".ts", ".tsx"]`, `[".kt", ".kts"]`) |
-| `test_file_patterns` | Glob patterns for test files |
-| `test_dir_name` | Test directory name convention |
-| `module_prefix` | Prefix stripped from directory names for module discovery |
-| `modules_dir` | Directory containing modules/packages relative to repo root. Use `"."` if modules are at the repo root (e.g. multi-module Android/Gradle projects) |
-| `domain_module` | Name of shared/domain module (if any) |
-| `interface_suffix` | Suffix for interface types (if any) |
-| `base_branch` | Main/default branch name (default: `"main"`). Use `"develop"`, `"develop-ui"`, etc. if your project uses a different base branch |
-| `build_command` | Single build command to run in the target project |
-| `test_command` | Single test command to run in the target project |
-| `deploy_command` | Deployment command or `null` to skip deployment stage |
-| `required_tools` | Binaries to check in health check |
-| `contract_extractor` | Custom script path for extracting interfaces (`null` = built-in) |
-
-#### `config/architecture.md` — Architecture description
-
-Write a markdown description of your product's architecture. This text is injected into AI prompts so Claude understands your codebase structure:
-
-```markdown
-# Project Architecture
-
-## Module Structure
-- auth/ — Authentication and authorization
-- api/ — REST API endpoints
-- core/ — Business logic and domain models
-
-## Key Patterns
-- Layered architecture with dependency inversion
-- All cross-module communication through defined interfaces
-
-## Constraints
-- core/ must have zero framework imports
-- New features must include tests
-```
-
-### 5. Adapt module configuration
-
-**`config/engine_graph_overrides.json`** — Define your product's module dependency graph:
-
-```json
-{
-  "description": "Module dependency graph",
-  "engines": {
-    "core": {
-      "role": "shared_infrastructure",
-      "feeds": ["api", "worker"],
-      "fed_by": []
-    }
-  }
-}
-```
-
-**`config/category_engine_map.json`** — Map finding categories to your modules.
-
-**`config/thresholds.json`** — Tune scoring thresholds.
-
-**`config/prohibited_patterns.txt`** — Regex patterns that Stage 6 rejects.
-
-### 6. Install the `/run-pipeline` command
-
-The command is defined in `.claude/commands/run-pipeline.md` and is **automatically available** when you open Claude Code from within this project directory:
+#### 5. Verify the setup
 
 ```bash
-cd feedback-loop
-claude
-```
-
-Type `/run-pipeline` in the Claude Code session to invoke it.
-
-#### Using it in another project
-
-Copy the command file into your target project:
-
-```bash
-mkdir -p /path/to/your-project/.claude/commands
-cp .claude/commands/run-pipeline.md /path/to/your-project/.claude/commands/
-```
-
-Or install it as a personal command available across all projects:
-
-```bash
-mkdir -p ~/.claude/commands
-cp .claude/commands/run-pipeline.md ~/.claude/commands/
-```
-
-### 7. Verify the setup
-
-```bash
-make pipeline-health-check
+make pipeline-health
 ```
 
 This validates: toolchain (configured tools), target product accessibility, configuration file presence, and license key.
+
+## Unified Configuration (`pipeline.yml`)
+
+The pipeline uses a single `config/pipeline.yml` as the source of truth for **all** settings. A resolver generates the individual config files that scripts expect.
+
+```
+pipeline.yml (you edit this one file)
+      |
+      v
+resolve_config.py (generates files scripts already expect)
+      |
+      +-- config/project.json
+      +-- config/architecture.md
+      +-- config/engine_graph_overrides.json
+      +-- config/category_engine_map.json
+      +-- config/thresholds.json
+      +-- config/prohibited_patterns.txt
+      +-- config/pipeline_preferences.json    (NEW — git, PR, pipeline prefs)
+      +-- config/com.ai-architect.pipeline-feedback.plist
+```
+
+### Sections
+
+`pipeline.yml` has 12 sections. See `config/pipeline.yml.example` for a fully commented reference.
+
+| Section | What it controls |
+|---|---|
+| `project` | Language, extensions, build/test commands, module structure |
+| `license` | License key path and validation toggle |
+| `architecture` | Free-form markdown injected into AI prompts |
+| `modules` | Module dependency graph (roles, feeds, fed_by) |
+| `categories` | Finding category to module mapping |
+| `git` | Branch naming patterns, commit message format, remote |
+| `pr` | PR title format, labels, engine labeling, PRD line limit |
+| `pipeline` | Max findings, max implementations, exclusions, Claude CLI turns/timeouts |
+| `notifications` | macOS notification sound, title, enable/disable |
+| `thresholds` | Scoring gates for all pipeline stages |
+| `patterns` | Prohibited code patterns (regex, one per line) |
+| `schedule` | Nightly run hour and minute |
+
+### Config management commands
+
+```bash
+make setup            # Interactive wizard — generates pipeline.yml from scratch
+make resolve-config   # Regenerate individual config files from pipeline.yml
+make validate-config  # Validate pipeline.yml without generating files
+make migrate-config   # Migrate existing JSON/MD configs to pipeline.yml (one-time)
+```
+
+The resolver runs automatically before pipeline targets when `pipeline.yml` is newer than the last resolve. If `pipeline.yml` doesn't exist, the pipeline reads individual config files directly — fully backward compatible.
+
+### Migrating from individual config files
+
+If you already have configured JSON/MD files:
+
+```bash
+make migrate-config
+```
+
+This reads your existing `project.json`, `thresholds.json`, `engine_graph_overrides.json`, `category_engine_map.json`, `architecture.md`, `prohibited_patterns.txt`, and plist file, then produces a unified `pipeline.yml`. Your original files are not modified.
+
+### Example: changing a setting
+
+To change the maximum findings per run from 20 to 10:
+
+```yaml
+# config/pipeline.yml
+pipeline:
+  top_n_findings: 10    # was 20
+```
+
+Then either run `make resolve-config` or let the auto-resolve trigger on the next pipeline run.
+
+### Example: custom branch naming
+
+```yaml
+git:
+  feature_branch_pattern: "auto/{finding_id}"
+  commit_message: "fix({finding_id}): {description}"
+pr:
+  title: "[Pipeline] {engines}: {finding_id}"
+  labels:
+    - automated
+    - needs-review
+```
 
 ## Usage
 
@@ -260,9 +256,11 @@ make pipeline-stage10         # PR creation
 ### Schedule nightly runs
 
 ```bash
-make install-scheduler        # Install launchd agent (runs at 2 AM)
+make install-scheduler        # Install launchd agent (runs at configured hour)
 make uninstall-scheduler      # Remove the scheduler
 ```
+
+The schedule hour is configurable in `pipeline.yml` under the `schedule` section (default: 2 AM).
 
 ## Quality enforcement
 
@@ -451,7 +449,7 @@ These are the default categories defined in `config/thresholds.json` and mapped 
 
 `api_change` · `behavior_change` · `dependency_change` · `config_change` · `schema_change` · `performance_change` · `security_change`
 
-Add or remove categories by editing both `thresholds.json` (stage_1.relevance_categories) and `category_engine_map.json` (mappings).
+Add or remove categories by editing both `thresholds.json` (stage_1.relevance_categories) and `category_engine_map.json` (mappings) — or edit the `thresholds` and `categories` sections in `pipeline.yml`.
 
 ### Using draft specs as findings
 
@@ -510,31 +508,37 @@ Creates a pull request per finding with a structured description linking back to
 .
 ├── .claude/
 │   └── commands/
-│       └── run-pipeline.md        # The /run-pipeline slash command
+│       └── run-pipeline.md          # The /run-pipeline slash command
 ├── config/
-│   ├── project.json               # Project-specific settings (language, build, test)
-│   ├── architecture.md            # Architecture description (injected into prompts)
-│   ├── thresholds.json            # Scoring thresholds for all stages
-│   ├── category_engine_map.json   # Finding category → module mapping
-│   ├── engine_graph_overrides.json# Module dependency graph
-│   └── prohibited_patterns.txt    # Anti-pattern regex rules
-├── prompts/                       # Stage prompt templates
+│   ├── pipeline.yml                 # Unified config (single source of truth)
+│   ├── pipeline.yml.example         # Fully commented example with all 12 sections
+│   ├── project.json                 # Generated — project settings
+│   ├── architecture.md              # Generated — architecture description
+│   ├── thresholds.json              # Generated — scoring thresholds
+│   ├── category_engine_map.json     # Generated — category-to-module mapping
+│   ├── engine_graph_overrides.json  # Generated — module dependency graph
+│   ├── prohibited_patterns.txt      # Generated — anti-pattern regex rules
+│   ├── pipeline_preferences.json    # Generated — git/PR/pipeline preferences
+│   └── com.ai-architect.pipeline-feedback.plist  # Generated — launchd schedule
+├── prompts/                         # Stage prompt templates
 │   ├── impact_analysis.md
-│   ├── integration_design.md      # Includes design principles (parameterization, genericity)
-│   ├── prd_generation.md          # Enforces 64 hard output rules
-│   ├── implementation.md          # Solution design quality requirements
-│   └── semantic_verification.md   # Genericity & scalability verification
-├── scripts/                       # Stage scripts, validators, processors
-│   ├── pipeline.sh                # Main orchestrator
-│   ├── load_project_config.py     # Shared config loader
-│   ├── stage[1-10]-*.sh           # Individual stage scripts
-│   ├── validate_*.py              # Output validators
-│   └── test_*.{sh,py}            # Test suite
+│   ├── integration_design.md        # Includes design principles
+│   ├── prd_generation.md            # Enforces 64 hard output rules
+│   ├── implementation.md            # Solution design quality requirements
+│   └── semantic_verification.md     # Genericity & scalability verification
+├── scripts/
+│   ├── pipeline.sh                  # Main orchestrator
+│   ├── resolve_config.py            # pipeline.yml -> individual config files
+│   ├── setup_wizard.py              # Interactive setup wizard
+│   ├── load_project_config.py       # Shared config loader
+│   ├── stage[1-10]-*.sh             # Individual stage scripts
+│   ├── validate_*.py                # Output validators
+│   └── test_*.{sh,py}              # Test suite
 ├── benchmarks/
-│   ├── baselines/                 # Reference PRDs and metrics
-│   └── inputs/                    # Benchmark input fixtures
-├── runs/                          # Pipeline run outputs (gitignored)
-├── Makefile                       # Make targets for all stages
+│   ├── baselines/                   # Reference PRDs and metrics
+│   └── inputs/                      # Benchmark input fixtures
+├── runs/                            # Pipeline run outputs (gitignored)
+├── Makefile                         # Make targets for all stages + config management
 └── README.md
 ```
 
@@ -549,16 +553,26 @@ Creates a pull request per finding with a structured description linking back to
 
 ### Config files
 
-Customize these files in `config/` to match your product:
+All settings live in `config/pipeline.yml`. The resolver generates individual files that scripts consume. You can edit either level:
 
-| File | Purpose | Must customize? |
+| Approach | When to use |
+|---|---|
+| Edit `pipeline.yml` + `make resolve-config` | Recommended — single file, all settings in one place |
+| Edit individual JSON/MD files directly | Works if you prefer it — pipeline reads them with or without `pipeline.yml` |
+| `make migrate-config` | One-time migration from existing JSON/MD files to `pipeline.yml` |
+
+### pipeline.yml sections reference
+
+| Section | Key fields | Defaults |
 |---|---|---|
-| `project.json` | Language, build/test commands, module structure | **Yes** |
-| `architecture.md` | Free-form architecture description for AI prompts | **Yes** |
-| `engine_graph_overrides.json` | Module dependency graph (roles, feeds, fed_by) | **Yes** |
-| `category_engine_map.json` | Maps finding categories to affected modules | **Yes** |
-| `thresholds.json` | Scoring minimums, retry limits, gate parameters | Recommended |
-| `prohibited_patterns.txt` | Regex patterns rejected by Stage 6 | Optional |
+| `project` | `language`, `modules_dir`, `base_branch`, `build_command`, `test_command` | Python, packages, main, make build, make test |
+| `license` | `key_file`, `validate_on_run` | ~/.aiprd/license-key, true |
+| `git` | `feature_branch_pattern`, `commit_message`, `remote` | pipeline/improvement-{finding_id}, origin |
+| `pr` | `title`, `labels`, `label_engines`, `prd_max_lines` | pipeline-generated + improvement labels, 100 lines |
+| `pipeline` | `top_n_findings`, `max_implementations`, `claude_max_turns`, `claude_timeout` | 20, 5, 30 turns impl, 1800s impl |
+| `notifications` | `enabled`, `sound`, `title` | true, Glass, AI-Architect Pipeline |
+| `thresholds` | `stage_2.compound_score_minimum`, `stage_4.prd_quality_minimum`, `retry.max_attempts` | 0.3, 0.85, 3 |
+| `schedule` | `hour`, `minute` | 2:00 AM |
 
 ### Prompt templates
 
@@ -575,13 +589,15 @@ Each prompt template enforces quality standards:
 | Issue | Fix |
 |---|---|
 | `PIPELINE_BUILDER` not set | `export PIPELINE_BUILDER="/path/to/your-product"` |
-| `[FAIL] License key not found` | Place your key at `~/.aiprd/license-key` |
+| `[FAIL] License key not found` | Run `make setup` or place your key at `~/.aiprd/license-key` |
 | `[FAIL] License invalid` | Verify your key at [ai-architect.tools](https://ai-architect.tools) |
+| `pipeline.yml` validation errors | Run `make validate-config` for detailed error messages |
+| PyYAML not installed | `pip install pyyaml` |
 | Stage 4 fails with "skill not found" | Ensure the `ai-prd-generator` skill is installed |
-| Build failures in Stage 5 | Verify `build_command` in `config/project.json` works in your target repo |
-| Test failures in Stage 5 | Verify `test_command` in `config/project.json` works in your target repo |
+| Build failures in Stage 5 | Verify `build_command` in `pipeline.yml` works in your target repo |
+| Test failures in Stage 5 | Verify `test_command` in `pipeline.yml` works in your target repo |
 | `gh` errors in Stage 10 | Run `gh auth login` to authenticate the GitHub CLI |
-| Health check fails on tools | Add missing tools to your PATH or update `required_tools` in `config/project.json` |
+| Health check fails on tools | Add missing tools to your PATH or update `required_tools` in `pipeline.yml` |
 
 ## About
 
