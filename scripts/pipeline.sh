@@ -74,6 +74,19 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Read pipeline preferences (from unified config, with fallbacks)
+# ---------------------------------------------------------------------------
+
+PREFS_FILE="${CONFIG_DIR}/pipeline_preferences.json"
+if [[ -f "$PREFS_FILE" ]]; then
+    TOP_N=$(python3 -c "import json; print(json.load(open('$PREFS_FILE'))['pipeline']['top_n_findings'])" 2>/dev/null || echo "20")
+    EXCLUDE_CATS=$(python3 -c "import json; print(' '.join(json.load(open('$PREFS_FILE'))['pipeline']['exclude_categories']))" 2>/dev/null || echo "benchmarks")
+else
+    TOP_N=20
+    EXCLUDE_CATS="benchmarks"
+fi
+
+# ---------------------------------------------------------------------------
 # Run directory + log setup
 # ---------------------------------------------------------------------------
 
@@ -186,8 +199,8 @@ run_stage "prioritize" \
         --category-map "$CONFIG_DIR/category_engine_map.json" \
         --engine-graph "$CONFIG_DIR/engine_graph.json" \
         --output "$RUN_DIR/prioritized_findings.json" \
-        --top-n 20 \
-        --exclude-categories benchmarks
+        --top-n "$TOP_N" \
+        --exclude-categories $EXCLUDE_CATS
 
 # Check if any actionable findings survived prioritization
 PRIORITIZED_COUNT=$(python3 -c "import json; print(json.load(open('$RUN_DIR/prioritized_findings.json'))['total_output'])" 2>/dev/null || echo "0")
@@ -301,7 +314,11 @@ fi
 
 PRS_CREATED=0
 for FID in "${SUCCESS_FIDS[@]}"; do
-    BRANCH="pipeline/improvement-${FID}"
+    if [[ -f "$PREFS_FILE" ]]; then
+        BRANCH=$(python3 -c "import json; print(json.load(open('$PREFS_FILE'))['git']['feature_branch_pattern'].format(finding_id='$FID'))" 2>/dev/null || echo "pipeline/improvement-${FID}")
+    else
+        BRANCH="pipeline/improvement-${FID}"
+    fi
     run_stage "stage10_pr_$FID" \
         "$SCRIPTS_DIR/stage10-pull-request.sh" \
             --run-dir "$RUN_DIR" \

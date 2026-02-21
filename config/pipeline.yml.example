@@ -1,0 +1,346 @@
+# =============================================================================
+# pipeline.yml — Unified Pipeline Configuration
+# =============================================================================
+#
+# Single source of truth for all pipeline settings. Edit this file instead of
+# individual JSON/MD config files. Run 'make resolve-config' to regenerate them.
+#
+# Quick start:
+#   1. Copy this file to config/pipeline.yml
+#   2. Edit the sections below (most have sensible defaults)
+#   3. Run: make resolve-config
+#   4. Run: make pipeline-health
+#
+# Or use the wizard:  make setup
+#
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Section 1: project — Target Product Settings
+# -----------------------------------------------------------------------------
+# These describe the product repo the pipeline analyzes and improves.
+# Most values are auto-detected by the setup wizard.
+
+project:
+  # Programming language of the target project.
+  # Supported: python, typescript, swift, go, rust
+  language: python
+
+  # File extensions for source code scanning.
+  source_extensions: [".py"]
+
+  # Glob patterns for finding test files.
+  test_file_patterns: ["**/test_*.py", "**/*_test.py"]
+
+  # Name of the test directory within each module.
+  test_dir_name: tests
+
+  # Prefix for module names (e.g. "MyApp" for MyAppCore, MyAppAPI).
+  # Leave empty if modules don't share a prefix.
+  module_prefix: ""
+
+  # Directory containing modules/packages (relative to project root).
+  # Use "." for single-module projects.
+  modules_dir: packages
+
+  # The primary domain module (optional — used for context in prompts).
+  domain_module: null
+
+  # Suffix for interface/protocol files (e.g. "Protocol" for Swift).
+  interface_suffix: null
+
+  # The main branch for PRs and branch operations.
+  base_branch: main
+
+  # Shell command to build the project (run from project root).
+  build_command: "make build"
+
+  # Shell command to run tests (run from project root).
+  test_command: "make test"
+
+  # Shell command for deployment (optional — used by Stage 9).
+  deploy_command: null
+
+  # CLI tools required for the pipeline to run.
+  required_tools: [python3, git, gh, jq, claude]
+
+  # Custom contract extractor command (optional).
+  contract_extractor: null
+
+
+# -----------------------------------------------------------------------------
+# Section 2: license — AIPRD License
+# -----------------------------------------------------------------------------
+# The pipeline uses an AIPRD license for PRD generation (Stage 4).
+
+license:
+  # Path to the license key file. The setup wizard creates this.
+  key_file: ~/.aiprd/license-key
+
+  # Validate license on each pipeline run?
+  # Set to false to skip validation (e.g. for offline use).
+  validate_on_run: true
+
+
+# -----------------------------------------------------------------------------
+# Section 3: architecture — Project Architecture Description
+# -----------------------------------------------------------------------------
+# Free-form markdown injected into AI prompts. Helps Claude understand
+# your codebase structure when analyzing impact and implementing changes.
+# Tip: Include module responsibilities, key patterns, and constraints.
+
+architecture: |
+  # Project Architecture
+
+  ## Module Structure
+  - Describe your modules and their responsibilities
+
+  ## Key Patterns
+  - Describe architectural patterns used
+
+  ## Constraints
+  - What conventions must be followed
+
+
+# -----------------------------------------------------------------------------
+# Section 4: modules — Dependency Graph
+# -----------------------------------------------------------------------------
+# Define your modules with roles and dependency relationships.
+# This generates config/engine_graph_overrides.json.
+#
+# Roles: shared_infrastructure, api_layer, background_processing, domain_logic
+# feeds: modules this one supplies data/services to (outgoing edges)
+# fed_by: modules that supply data/services to this one (incoming edges)
+
+modules:
+  core:
+    role: shared_infrastructure
+    feeds: [api, worker]
+    fed_by: []
+  api:
+    role: api_layer
+    feeds: []
+    fed_by: [core]
+  worker:
+    role: background_processing
+    feeds: []
+    fed_by: [core]
+
+
+# -----------------------------------------------------------------------------
+# Section 5: categories — Finding-to-Module Mapping
+# -----------------------------------------------------------------------------
+# Maps finding categories to affected modules. When the pipeline finds an
+# "api_change" finding, it knows to look at the "api" module.
+
+categories:
+  api_change:
+    primary_engines: [api]
+    related_ports: []
+    key_services: []
+  dependency_change:
+    primary_engines: [core]
+    related_ports: []
+    key_services: []
+  behavior_change:
+    primary_engines: [core]
+    related_ports: []
+    key_services: []
+  config_change:
+    primary_engines: [core]
+    related_ports: []
+    key_services: []
+  schema_change:
+    primary_engines: [api]
+    related_ports: []
+    key_services: []
+  performance_change:
+    primary_engines: [core, api]
+    related_ports: []
+    key_services: []
+  security_change:
+    primary_engines: [core]
+    related_ports: []
+    key_services: []
+
+
+# -----------------------------------------------------------------------------
+# Section 6: git — Branch & Commit Conventions
+# -----------------------------------------------------------------------------
+# How the pipeline names branches and formats commits.
+# Variables: {run_ts} = timestamp, {finding_id} = finding ID,
+#            {description} = finding description, {engines} = affected modules
+
+git:
+  # Branch created for the overall pipeline run.
+  run_branch_pattern: "pipeline/run-{run_ts}"
+
+  # Branch created per finding (for implementation + PR).
+  feature_branch_pattern: "pipeline/improvement-{finding_id}"
+
+  # Commit message format for pipeline changes.
+  commit_message: "pipeline: {finding_id} — {description}"
+
+  # Git remote to push branches to.
+  remote: origin
+
+
+# -----------------------------------------------------------------------------
+# Section 7: pr — Pull Request Preferences
+# -----------------------------------------------------------------------------
+# How pipeline-generated PRs look on GitHub.
+
+pr:
+  # PR title format.
+  title: "pipeline: improve {engines} — {finding_id}"
+
+  # Labels applied to every pipeline PR.
+  labels:
+    - pipeline-generated
+    - improvement
+
+  # Also add affected engine/module names as labels?
+  label_engines: true
+
+  # Max PRD lines shown in PR body (rest is collapsed).
+  prd_max_lines: 100
+
+
+# -----------------------------------------------------------------------------
+# Section 8: pipeline — Execution Preferences
+# -----------------------------------------------------------------------------
+# Controls how many findings to process and resource limits.
+
+pipeline:
+  # Max findings to process per run (after prioritization).
+  top_n_findings: 20
+
+  # Max findings to actually implement (Stage 5 cap).
+  max_implementations: 5
+
+  # Finding categories to exclude from processing.
+  exclude_categories:
+    - benchmarks
+
+  # Where to find Technical Veil findings.
+  # "auto" checks standard locations in order.
+  # Or set an absolute path to a specific file.
+  findings_source: auto
+
+  # Claude CLI max turns per stage type.
+  claude_max_turns:
+    analysis: 5        # Stages 2, 3 (impact, integration design)
+    implementation: 30  # Stage 5 (code implementation)
+    verification: 5     # Stage 7 (semantic verification)
+
+  # Claude CLI timeout in seconds per stage type.
+  claude_timeout:
+    default: 300        # 5 minutes for analysis stages
+    implementation: 1800  # 30 minutes for implementation
+
+
+# -----------------------------------------------------------------------------
+# Section 9: notifications — macOS Notification Preferences
+# -----------------------------------------------------------------------------
+
+notifications:
+  # Enable/disable macOS notifications.
+  enabled: true
+
+  # macOS notification sound name (or "default" for system default).
+  # Common sounds: Glass, Basso, Blow, Bottle, Frog, Funk, Hero, Morse,
+  #                Ping, Pop, Purr, Sosumi, Submarine, Tink
+  sound: Glass
+
+  # Notification title prefix.
+  title: "AI-Architect Pipeline"
+
+
+# -----------------------------------------------------------------------------
+# Section 10: thresholds — Quality & Validation Gates
+# -----------------------------------------------------------------------------
+# Scores and limits that determine what passes through each pipeline stage.
+
+thresholds:
+  # Stage 1: Finding relevance filter
+  stage_1:
+    relevance_score_minimum: 0.5
+    relevance_categories:
+      - api_change
+      - behavior_change
+      - dependency_change
+      - config_change
+      - schema_change
+      - performance_change
+      - security_change
+      - prompting
+      - retrieval
+      - verification
+      - embeddings
+      - inference
+      - cost_optimization
+      - benchmarks
+
+  # Stage 2: Impact analysis acceptance
+  stage_2:
+    compound_score_minimum: 0.3
+    engines_affected_minimum: 2
+
+  # Stage 4: PRD quality gate
+  stage_4:
+    prd_quality_minimum: 0.85
+
+  # Stage 6: Enforcement gates
+  stage_6:
+    prohibited_patterns_file: config/prohibited_patterns.txt
+    orphan_detection_extensions: from_project_config
+    orphan_detection_exclude_dirs:
+      - .build
+      - .git
+      - runs
+      - logs
+      - benchmarks
+
+  # Stage 8: Benchmark regression detection
+  stage_8:
+    regression_threshold: 0.05
+    dimensions:
+      - completeness
+      - accuracy
+      - consistency
+      - actionability
+
+  # Retry settings
+  retry:
+    max_attempts: 3
+
+
+# -----------------------------------------------------------------------------
+# Section 11: patterns — Prohibited Code Patterns
+# -----------------------------------------------------------------------------
+# Regex patterns that Stage 6 scans for in generated code.
+# Any match causes a gate failure — the implementation must not contain these.
+
+patterns:
+  - "TODO"
+  - "FIXME"
+  - "HACK"
+  - "XXX"
+  - "TEMP\\b"
+  - "PLACEHOLDER"
+  - "placeholder"
+  - "not implemented"
+  - "stub\\b"
+
+
+# -----------------------------------------------------------------------------
+# Section 12: schedule — Automated Nightly Runs
+# -----------------------------------------------------------------------------
+# Controls the macOS launchd scheduler (installed via 'make install-scheduler').
+
+schedule:
+  # Hour to run (0-23, in local time).
+  hour: 2
+  # Minute to run (0-59).
+  minute: 0

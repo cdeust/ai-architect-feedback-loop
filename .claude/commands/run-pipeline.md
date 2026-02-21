@@ -51,21 +51,38 @@ Derive `PACKAGES_DIR`:
 
 Use `PACKAGES_DIR` and `BASE_BRANCH` in ALL subsequent steps instead of hardcoded values.
 
+**Read pipeline preferences** — If `<CONFIG>/pipeline_preferences.json` exists, read it and extract:
+- `RUN_BRANCH_PATTERN` = `git.run_branch_pattern` (default: `"pipeline/run-{run_ts}"`)
+- `FEATURE_BRANCH_PATTERN` = `git.feature_branch_pattern` (default: `"pipeline/improvement-{finding_id}"`)
+- `COMMIT_MESSAGE` = `git.commit_message` (default: `"pipeline: {finding_id} — {description}"`)
+- `GIT_REMOTE` = `git.remote` (default: `"origin"`)
+- `LICENSE_KEY_FILE` = `license.key_file` (default: `"~/.aiprd/license-key"`)
+- `VALIDATE_LICENSE` = `license.validate_on_run` (default: `true`)
+- `CLAUDE_MAX_TURNS_IMPL` = `pipeline.claude_max_turns.implementation` (default: `30`)
+- `CLAUDE_MAX_TURNS_ANALYSIS` = `pipeline.claude_max_turns.analysis` (default: `5`)
+- `CLAUDE_TIMEOUT_IMPL` = `pipeline.claude_timeout.implementation` (default: `1800`)
+- `TOP_N` = `pipeline.top_n_findings` (default: `20`)
+- `EXCLUDE_CATS` = `pipeline.exclude_categories` (default: `["benchmarks"]`)
+
+Use these variables instead of hardcoded values throughout the pipeline steps. If the file doesn't exist, use the defaults listed above.
+
 ### Step 0.0: Create working branches (protect base branch)
 
 Create a working branch in **both repos** so the base branch is never modified directly. All pipeline work happens on these branches.
 
+Use `RUN_BRANCH_PATTERN` to derive the run branch name: replace `{run_ts}` with `<RUN_TS>`. Default: `pipeline/run-<RUN_TS>`.
+
 **Feedback-loop repo:**
 ```bash
-git -C "<REPO>" checkout -b "pipeline/run-<RUN_TS>"
+git -C "<REPO>" checkout -b "<RUN_BRANCH>"
 ```
 
 **Builder repo** — ensure we branch from the configured base branch (`BASE_BRANCH`):
 ```bash
-git -C "<BUILDER>" checkout "<BASE_BRANCH>" && git -C "<BUILDER>" checkout -b "pipeline/run-<RUN_TS>"
+git -C "<BUILDER>" checkout "<BASE_BRANCH>" && git -C "<BUILDER>" checkout -b "<RUN_BRANCH>"
 ```
 
-This `pipeline/run-<RUN_TS>` branch in the builder serves as the **working base** for the run. Per-finding feature branches (`pipeline/improvement-<FID>`) are created from this base — NOT from `<BASE_BRANCH>` directly.
+This `<RUN_BRANCH>` branch in the builder serves as the **working base** for the run. Per-finding feature branches are created from this base using `FEATURE_BRANCH_PATTERN` (replace `{finding_id}` with `<FID>`) — NOT from `<BASE_BRANCH>` directly.
 
 If either checkout fails: print `[FAIL] Step 0.0: Could not create working branch` and **stop entirely**.
 Print: `[PASS] Step 0.0: Working branches created — pipeline/run-<RUN_TS>`
@@ -74,11 +91,13 @@ Print: `[PASS] Step 0.0: Working branches created — pipeline/run-<RUN_TS>`
 
 Check if a license key exists. If it does, validate it **once** here. The result applies to the entire run — no further license checks needed (including when invoking the ai-prd-generator skill).
 
+Use `LICENSE_KEY_FILE` from pipeline preferences (default: `~/.aiprd/license-key`). If `VALIDATE_LICENSE` is `false`, skip this entire step and print `[SKIP] Step 0.1: License validation disabled`.
+
 ```bash
-test -f ~/.aiprd/license-key && echo "KEY_EXISTS" || echo "NO_KEY"
+test -f <LICENSE_KEY_FILE> && echo "KEY_EXISTS" || echo "NO_KEY"
 ```
 
-- If `NO_KEY`: print `[FAIL] License key not found at ~/.aiprd/license-key` and **stop entirely**.
+- If `NO_KEY`: print `[FAIL] License key not found at <LICENSE_KEY_FILE>` and **stop entirely**.
 - If `KEY_EXISTS`: validate once:
 
 ```bash
@@ -127,8 +146,10 @@ Replace `<RUN>`, `<SCRIPTS>`, `<BUILDER>`, `<CONFIG>`, `<FINDINGS_FLAG>` with th
 ### Step 1.2: Prioritize
 
 ```bash
-python3 "<SCRIPTS>/prioritize_findings.py" --findings "<RUN>/findings.json" --category-map "<CONFIG>/category_engine_map.json" --engine-graph "<CONFIG>/engine_graph.json" --output "<RUN>/prioritized_findings.json" --top-n 20 2>&1
+python3 "<SCRIPTS>/prioritize_findings.py" --findings "<RUN>/findings.json" --category-map "<CONFIG>/category_engine_map.json" --engine-graph "<CONFIG>/engine_graph.json" --output "<RUN>/prioritized_findings.json" --top-n <TOP_N> --exclude-categories <EXCLUDE_CATS> 2>&1
 ```
+
+Use `TOP_N` and `EXCLUDE_CATS` from pipeline preferences (defaults: 20, benchmarks).
 
 ### Step 1.3: Read findings
 
@@ -392,7 +413,7 @@ Read descriptor + prompt. Then **implement directly**:
    - Do NOT move on, do NOT skip. Fix test failures in-place on the feature branch.
 
 7. Only after build AND tests pass:
-   Commit: `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "pipeline: <FID> — <description>"`
+   Commit using `COMMIT_MESSAGE` pattern (replace `{finding_id}` with `<FID>`, `{description}` with a brief description): `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "<COMMIT_MESSAGE>"`
 8. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
 
 **CRITICAL: Build and test failures are NOT stage failures — they are implementation bugs you must fix before proceeding. Only move to retry (next attempt) if Run 2 validation rejects, or if Stage 6/7 rejects. Never skip a finding because of a build error.**

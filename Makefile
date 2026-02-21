@@ -29,8 +29,12 @@ LOGS_DIR := logs
 BENCHMARKS_DIR := benchmarks
 TV_DIR ?= $(HOME)/Downloads/TechnicalVeil
 
-# Derive PACKAGES_DIR from config/project.json modules_dir (default: "packages")
+# Derive MODULES_DIR: check pipeline.yml first (via pipeline_preferences.json), fall back to project.json
+ifneq (,$(wildcard $(CONFIG_DIR)/pipeline.yml))
+MODULES_DIR := $(shell python3 -c "import yaml; print(yaml.safe_load(open('$(CONFIG_DIR)/pipeline.yml')).get('project',{}).get('modules_dir','packages'))" 2>/dev/null || echo "packages")
+else
 MODULES_DIR := $(shell python3 -c "import json; print(json.load(open('$(CONFIG_DIR)/project.json')).get('modules_dir', 'packages'))" 2>/dev/null || echo "packages")
+endif
 ifeq ($(MODULES_DIR),.)
 PACKAGES_DIR := $(BUILDER_DIR)
 else
@@ -331,6 +335,40 @@ pipeline-health: ## Validate config files, scripts, and benchmarks
 	echo "  $$BASELINE_COUNT baselines with metrics.json"
 	@echo ""
 	@echo "Pipeline health: OK"
+
+# ============================================================================
+# Unified Config (pipeline.yml)
+# ============================================================================
+
+.PHONY: setup
+setup: ## Interactive setup wizard — generates pipeline.yml
+	@python3 $(SCRIPTS_DIR)/setup_wizard.py --builder-dir $(BUILDER_DIR)
+
+.PHONY: resolve-config
+resolve-config: ## Generate individual config files from pipeline.yml
+	@python3 $(SCRIPTS_DIR)/resolve_config.py --config $(CONFIG_DIR)/pipeline.yml --output-dir $(CONFIG_DIR)
+
+.PHONY: validate-config
+validate-config: ## Validate pipeline.yml without generating files
+	@python3 $(SCRIPTS_DIR)/resolve_config.py --config $(CONFIG_DIR)/pipeline.yml --validate
+
+.PHONY: migrate-config
+migrate-config: ## Migrate existing JSON/MD configs to pipeline.yml (one-time)
+	@python3 $(SCRIPTS_DIR)/resolve_config.py --reverse --config $(CONFIG_DIR)/pipeline.yml --output-dir $(CONFIG_DIR)
+
+# Auto-resolve: if pipeline.yml exists and is newer than sentinel, re-resolve
+ifneq (,$(wildcard $(CONFIG_DIR)/pipeline.yml))
+$(CONFIG_DIR)/.config_resolved: $(CONFIG_DIR)/pipeline.yml
+	@echo "pipeline.yml changed — regenerating config files..."
+	@python3 $(SCRIPTS_DIR)/resolve_config.py --config $(CONFIG_DIR)/pipeline.yml --output-dir $(CONFIG_DIR)
+
+pipeline-run: $(CONFIG_DIR)/.config_resolved
+pipeline-stage1: $(CONFIG_DIR)/.config_resolved
+pipeline-stage2: $(CONFIG_DIR)/.config_resolved
+pipeline-stage5: $(CONFIG_DIR)/.config_resolved
+pipeline-stage10: $(CONFIG_DIR)/.config_resolved
+pipeline-health: $(CONFIG_DIR)/.config_resolved
+endif
 
 # ============================================================================
 # Cleanup

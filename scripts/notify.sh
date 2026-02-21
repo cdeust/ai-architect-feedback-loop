@@ -56,7 +56,22 @@ done
 # Compose notification
 # ---------------------------------------------------------------------------
 
+# Read notification preferences
+_PREFS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/pipeline_preferences.json"
+NOTIF_ENABLED=true
+NOTIF_SOUND="Glass"
 TITLE="AI-Architect Pipeline"
+if [[ -f "$_PREFS_FILE" ]]; then
+    NOTIF_ENABLED=$(python3 -c "import json; print(str(json.load(open('$_PREFS_FILE'))['notifications'].get('enabled', True)).lower())" 2>/dev/null || echo "true")
+    NOTIF_SOUND=$(python3 -c "import json; print(json.load(open('$_PREFS_FILE'))['notifications'].get('sound', 'Glass'))" 2>/dev/null || echo "Glass")
+    TITLE=$(python3 -c "import json; print(json.load(open('$_PREFS_FILE'))['notifications'].get('title', 'AI-Architect Pipeline'))" 2>/dev/null || echo "AI-Architect Pipeline")
+fi
+
+if [[ "$NOTIF_ENABLED" == "false" ]]; then
+    log "INFO" "Notifications disabled in preferences"
+    exit 0
+fi
+
 SUBTITLE=""
 BODY=""
 
@@ -127,7 +142,7 @@ fi
 # Send macOS notification
 # ---------------------------------------------------------------------------
 
-osascript -e "display notification \"$BODY\" with title \"$TITLE\" subtitle \"$SUBTITLE\" sound name \"Glass\"" 2>/dev/null \
+osascript -e "display notification \"$BODY\" with title \"$TITLE\" subtitle \"$SUBTITLE\" sound name \"$NOTIF_SOUND\"" 2>/dev/null \
     && log "INFO" "Notification sent" \
     || log "WARN" "osascript notification failed — non-fatal"
 

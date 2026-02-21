@@ -64,6 +64,13 @@ MAX_IMPLEMENTATIONS=5
 SINGLE_FINDING_ID=""
 FAILURE_CONTEXT_FILE=""
 
+# Read pipeline preferences (overrides defaults above)
+_PREFS_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/config/pipeline_preferences.json"
+if [[ -f "$_PREFS_FILE" ]]; then
+    MAX_IMPLEMENTATIONS=$(python3 -c "import json; print(json.load(open('$_PREFS_FILE'))['pipeline']['max_implementations'])" 2>/dev/null || echo "5")
+    TIMEOUT=$(python3 -c "import json; print(json.load(open('$_PREFS_FILE'))['pipeline']['claude_timeout'].get('implementation', 1800))" 2>/dev/null || echo "1800")
+fi
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --run-dir)
@@ -356,7 +363,11 @@ PYEOF
     fi
 
     # Create or checkout feature branch
-    BRANCH_NAME="pipeline/improvement-${FINDING_ID}"
+    if [[ -f "$_PREFS_FILE" ]]; then
+        BRANCH_NAME=$(python3 -c "import json; print(json.load(open('$_PREFS_FILE'))['git']['feature_branch_pattern'].format(finding_id='$FINDING_ID'))" 2>/dev/null || echo "pipeline/improvement-${FINDING_ID}")
+    else
+        BRANCH_NAME="pipeline/improvement-${FINDING_ID}"
+    fi
     if git -C "$BUILDER_DIR" show-ref --verify --quiet "refs/heads/$BRANCH_NAME" 2>/dev/null; then
         log "INFO" "Checking out existing branch: $BRANCH_NAME"
         git -C "$BUILDER_DIR" checkout "$BRANCH_NAME" 2>/dev/null

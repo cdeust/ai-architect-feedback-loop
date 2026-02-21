@@ -160,20 +160,36 @@ def compose_integration_plan(integration_plan):
     return "\n".join(lines)
 
 
+def _load_prd_max_lines():
+    """Load prd_max_lines from pipeline_preferences.json, default 100."""
+    prefs_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "config", "pipeline_preferences.json"
+    )
+    if os.path.isfile(prefs_path):
+        try:
+            with open(prefs_path) as f:
+                prefs = json.load(f)
+            return prefs.get("pr", {}).get("prd_max_lines", 100)
+        except (json.JSONDecodeError, IOError):
+            pass
+    return 100
+
+
 def compose_prd_section(prd_content):
-    """Compose collapsible PRD section (first 100 lines)."""
+    """Compose collapsible PRD section (first N lines from preferences)."""
     if not prd_content:
         return ""
 
-    prd_lines = prd_content.split("\n")[:100]
+    max_lines = _load_prd_max_lines()
+    prd_lines = prd_content.split("\n")[:max_lines]
     truncated = "\n".join(prd_lines)
 
     lines = []
-    lines.append("<details><summary>PRD Specification (first 100 lines)</summary>")
+    lines.append(f"<details><summary>PRD Specification (first {max_lines} lines)</summary>")
     lines.append("")
     lines.append(truncated)
     lines.append("")
-    if len(prd_content.split("\n")) > 100:
+    if len(prd_content.split("\n")) > max_lines:
         lines.append(f"... (truncated, {len(prd_content.split(chr(10)))} total lines)")
         lines.append("")
     lines.append("</details>")

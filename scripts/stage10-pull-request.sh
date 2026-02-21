@@ -28,6 +28,9 @@ if [[ -f "$PROJECT_CONFIG" ]]; then
     BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
 fi
 
+# Read pipeline preferences (for PR formatting)
+_PREFS_FILE="$SCRIPT_DIR/../config/pipeline_preferences.json"
+
 # ---------------------------------------------------------------------------
 # Structured logging
 # ---------------------------------------------------------------------------
@@ -170,14 +173,29 @@ log "INFO" "PR description composed"
 # Build PR title and labels
 # ---------------------------------------------------------------------------
 
-# Title: "pipeline: improve {engines} — {finding_id}"
+# Build PR title from preferences or defaults
 ENGINE_DISPLAY=$(echo "$ENGINE_NAMES" | tr ',' ', ')
-TITLE="pipeline: improve ${ENGINE_DISPLAY:-unknown} — ${FINDING_ID}"
-
-# Labels: pipeline-generated,improvement,{engine_names}
-LABELS="pipeline-generated,improvement"
-if [[ -n "$ENGINE_NAMES" ]]; then
-    LABELS="${LABELS},${ENGINE_NAMES}"
+if [[ -f "$_PREFS_FILE" ]]; then
+    TITLE=$(python3 -c "
+import json
+p = json.load(open('$_PREFS_FILE'))
+t = p['pr']['title']
+print(t.format(engines='${ENGINE_DISPLAY:-unknown}', finding_id='$FINDING_ID'))
+" 2>/dev/null || echo "pipeline: improve ${ENGINE_DISPLAY:-unknown} — ${FINDING_ID}")
+    LABELS=$(python3 -c "
+import json
+p = json.load(open('$_PREFS_FILE'))
+labels = list(p['pr']['labels'])
+if p['pr'].get('label_engines', True) and '$ENGINE_NAMES':
+    labels.extend('$ENGINE_NAMES'.split(','))
+print(','.join(labels))
+" 2>/dev/null || echo "pipeline-generated,improvement")
+else
+    TITLE="pipeline: improve ${ENGINE_DISPLAY:-unknown} — ${FINDING_ID}"
+    LABELS="pipeline-generated,improvement"
+    if [[ -n "$ENGINE_NAMES" ]]; then
+        LABELS="${LABELS},${ENGINE_NAMES}"
+    fi
 fi
 
 log "INFO" "PR title: $TITLE"
@@ -187,10 +205,15 @@ log "INFO" "PR labels: $LABELS"
 # Push branch to remote
 # ---------------------------------------------------------------------------
 
-log "INFO" "Pushing branch $BRANCH to remote..."
+GIT_REMOTE="origin"
+if [[ -f "$_PREFS_FILE" ]]; then
+    GIT_REMOTE=$(python3 -c "import json; print(json.load(open('$_PREFS_FILE'))['git'].get('remote', 'origin'))" 2>/dev/null || echo "origin")
+fi
+
+log "INFO" "Pushing branch $BRANCH to remote ($GIT_REMOTE)..."
 
 PUSH_EXIT=0
-git -C "$BUILDER_DIR" push -u origin "$BRANCH" 2>&1 || PUSH_EXIT=$?
+git -C "$BUILDER_DIR" push -u "$GIT_REMOTE" "$BRANCH" 2>&1 || PUSH_EXIT=$?
 
 if [[ "$PUSH_EXIT" -ne 0 ]]; then
     log "ERROR" "Failed to push branch $BRANCH"
