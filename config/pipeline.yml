@@ -10,7 +10,7 @@ project:
   modules_dir: .
   domain_module: null
   interface_suffix: null
-  base_branch: feat/docker-containerization
+  base_branch: main
   build_command: make build
   test_command: make test
   deploy_command: null

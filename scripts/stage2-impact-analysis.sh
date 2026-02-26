@@ -329,10 +329,10 @@ print(' '.join(sorted(primary)))
 
     python3 - "$PROMPT_TEMPLATE_PATH" "$ENGINE_GRAPH" "$TMP_DIR/contracts.md" \
         "$FINDING_FILE" "$TMP_DIR/schema.txt" "$TMP_DIR/category_mapping_${PROCESSED}.txt" \
-        "$TMP_DIR/prompt_${PROCESSED}.md" <<'PYEOF'
-import sys
+        "$CONFIG_PATH" "$TMP_DIR/prompt_${PROCESSED}.md" <<'PYEOF'
+import json, sys
 
-template_path, engine_graph_path, contracts_path, finding_path, schema_path, cat_map_path, output_path = sys.argv[1:8]
+template_path, engine_graph_path, contracts_path, finding_path, schema_path, cat_map_path, config_path, output_path = sys.argv[1:9]
 
 with open(template_path) as f:
     template = f.read()
@@ -347,12 +347,26 @@ with open(schema_path) as f:
 with open(cat_map_path) as f:
     category_mapping = f.read()
 
+# Read thresholds for prompt injection
+engines_min = 2
+score_min = 0.3
+if config_path:
+    try:
+        cfg = json.load(open(config_path))
+        s2 = cfg.get("stage_2", {})
+        engines_min = s2.get("engines_affected_minimum", 2)
+        score_min = s2.get("compound_score_minimum", 0.3)
+    except Exception:
+        pass
+
 result = template
 result = result.replace("{{ENGINE_GRAPH}}", engine_graph)
 result = result.replace("{{CATEGORY_ENGINE_MAP}}", category_mapping)
 result = result.replace("{{ENGINE_CONTRACTS}}", contracts)
 result = result.replace("{{FINDING}}", finding)
 result = result.replace("{{IMPACT_REPORT_SCHEMA}}", schema)
+result = result.replace("{{ENGINES_AFFECTED_MINIMUM}}", str(engines_min))
+result = result.replace("{{COMPOUND_SCORE_MINIMUM}}", str(score_min))
 
 with open(output_path, "w") as f:
     f.write(result)

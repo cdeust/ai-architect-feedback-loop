@@ -28,7 +28,7 @@ compound_score = engines_affected * 0.3 + propagation_depth * 0.2 +
 ```
 
 Where:
-- engines_affected: Count of distinct modules whose behavior would change (min 2 to proceed)
+- engines_affected: Count of distinct modules whose behavior would change (min {{ENGINES_AFFECTED_MINIMUM}} to proceed)
 - propagation_depth: Maximum chain length through feeds/fed_by relationships (1=direct, 2=transitive)
 - contract_impact: Fraction (0.0-1.0) of interface methods in affected modules that need modification
 - test_coverage_delta: Estimated fraction (0.0-1.0) of existing tests that would need updates
@@ -40,7 +40,7 @@ Where:
 3. Trace SECOND-ORDER propagation: modules that consume first-order output
 4. For each affected module, identify which interface methods would need changes
 5. Score each component of the compound formula
-6. RECOMMEND: "PROCEED" if engines_affected >= 2 AND compound_score >= 0.3, else "REJECT"
+6. RECOMMEND: "PROCEED" if engines_affected >= {{ENGINES_AFFECTED_MINIMUM}} AND compound_score >= {{COMPOUND_SCORE_MINIMUM}}, else "REJECT"
 
 ## Output Format
 Respond with ONLY a JSON object matching this schema (no markdown, no explanation):
