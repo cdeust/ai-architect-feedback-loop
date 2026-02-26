@@ -5,13 +5,11 @@ services:
     container_name: ai-architect-pipeline
     environment:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GH_TOKEN=${GH_TOKEN:-}
     volumes:
       - ${TARGET_REPO:?Set TARGET_REPO}:/workspace/target:ro
       - ./config:/app/config
       - ./runs:/app/runs
       - ./logs:/app/logs
       - ${HOME}/.claude:/home/pipeline/.claude:ro
-      - ${HOME}/.config/gh:/home/pipeline/.config/gh:ro
       - ${HOME}/.aiprd:/home/pipeline/.aiprd:ro
-    stdin_open: true
-    tty: true

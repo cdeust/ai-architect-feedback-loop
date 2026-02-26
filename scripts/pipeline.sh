@@ -293,7 +293,7 @@ for vf in "${_scan_pipeline_s5[@]+"${_scan_pipeline_s5[@]}"}"; do
     fid=$(python3 -c "import json; d=json.load(open('$vf')); print(d.get('finding_id',''))" 2>/dev/null || echo "")
     if [[ "$result" == "ACCEPTED" && -n "$fid" ]]; then
         # Avoid duplicates
-        local _dup=false
+        _dup=false
         for _e in "${ACCEPTED_FIDS[@]+"${ACCEPTED_FIDS[@]}"}"; do
             [[ "$_e" == "$fid" ]] && _dup=true && break
         done
