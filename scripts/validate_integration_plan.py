@@ -70,10 +70,28 @@ def check_schema(plan):
     return {"check": "schema_completeness", "result": "PASS"}
 
 
+_TEST_DIR_MARKERS = ["/Tests/", "/tests/", "/test/", "/__tests__/", "/spec/"]
+
+
+def _is_test_file(path):
+    """Check if a file path looks like a test file (language-agnostic)."""
+    basename = os.path.basename(path)
+    # File is in a test directory
+    if any(marker in path for marker in _TEST_DIR_MARKERS):
+        return True
+    # File name starts with test_ or ends with _test/Tests (common conventions)
+    if basename.startswith("test_") or basename.startswith("Test"):
+        return True
+    name_no_ext = os.path.splitext(basename)[0]
+    if name_no_ext.endswith("_test") or name_no_ext.endswith("_spec") or name_no_ext.endswith(".test") or name_no_ext.endswith("Tests"):
+        return True
+    return False
+
+
 def check_no_new_source_files(plan):
     """Rule 2: new_files must be empty or only contain test files."""
     new_files = plan.get("new_files", [])
-    non_test = [f for f in new_files if "/Tests/" not in f]
+    non_test = [f for f in new_files if not _is_test_file(f)]
     if non_test:
         return {"check": "no_new_source_files", "result": "FAIL",
                 "reason": f"Non-test new files: {', '.join(non_test[:5])}"}
@@ -96,11 +114,16 @@ def check_all_engines_have_modifications(plan):
 
 
 def check_cross_engine_connections(plan):
-    """Rule 4: Must have at least 1 cross-engine touchpoint."""
+    """Rule 4: Cross-engine touchpoints required when multiple engines affected."""
+    affected = plan.get("affected_engines", [])
     touchpoints = plan.get("cross_engine_touchpoints", [])
+    # Single-engine changes don't need cross-engine touchpoints
+    if len(affected) <= 1:
+        return {"check": "cross_engine_connections", "result": "PASS",
+                "reason": "Single-engine change — cross-engine touchpoints not required"}
     if len(touchpoints) < 1:
         return {"check": "cross_engine_connections", "result": "FAIL",
-                "reason": "Zero cross-engine touchpoints — single-engine change"}
+                "reason": f"Multi-engine change ({len(affected)} engines) but zero cross-engine touchpoints"}
     return {"check": "cross_engine_connections", "result": "PASS"}
 
 
@@ -240,9 +263,12 @@ def check_test_file_location(plan, project_config=None):
         test_dir_name = project_config.get("test_dir_name", "tests")
         module_prefix = project_config.get("module_prefix", "")
 
-    test_dir_variants = [f"/{test_dir_name}/", "/Tests/", "/test/"]
+    test_dir_variants = [f"/{test_dir_name}/", "/Tests/", "/test/", "/__tests__/", "/spec/"]
 
     for tf in test_files:
+        # Accept any file that is in a recognized test directory
+        if any(marker in tf for marker in _TEST_DIR_MARKERS):
+            continue
         in_correct_package = False
         for engine in affected:
             for variant in test_dir_variants:
@@ -252,9 +278,7 @@ def check_test_file_location(plan, project_config=None):
             if in_correct_package:
                 break
         if not in_correct_package:
-            # Check if it's at least in some test directory
-            if not any(v in tf for v in test_dir_variants):
-                misplaced.append(tf)
+            misplaced.append(tf)
 
     if misplaced:
         return {"check": "test_file_location", "result": "FAIL",

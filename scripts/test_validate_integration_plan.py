@@ -167,7 +167,7 @@ class TestRejectedMissingMods(unittest.TestCase):
 class TestRejectedNoTouchpoints(unittest.TestCase):
     """UT-VIP-004: Zero cross-engine touchpoints."""
 
-    def test_no_touchpoints_rejected(self):
+    def test_no_touchpoints_multi_engine_rejected(self):
         plan = make_valid_plan()
         plan["cross_engine_touchpoints"] = []
 
@@ -175,7 +175,17 @@ class TestRejectedNoTouchpoints(unittest.TestCase):
         self.assertEqual(result, "REJECTED")
         check = next(c for c in checks if c["check"] == "cross_engine_connections")
         self.assertEqual(check["result"], "FAIL")
-        self.assertIn("single-engine", check["reason"])
+        self.assertIn("zero cross-engine touchpoints", check["reason"].lower())
+
+    def test_no_touchpoints_single_engine_accepted(self):
+        plan = make_valid_plan()
+        plan["affected_engines"] = ["RAGEngine"]
+        plan["modifications"] = [plan["modifications"][0]]
+        plan["cross_engine_touchpoints"] = []
+
+        _, checks = vip.validate(plan)
+        check = next(c for c in checks if c["check"] == "cross_engine_connections")
+        self.assertEqual(check["result"], "PASS")
 
 
 # ---------------------------------------------------------------------------

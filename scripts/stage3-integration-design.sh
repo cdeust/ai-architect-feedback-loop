@@ -415,11 +415,17 @@ PYEOF
     VALIDATION_FILE=$(artifact_validation3 "$OUTPUT_DIR" "$FINDING_ID")
     VALIDATE_EXIT=0
 
-    python3 "$SCRIPT_DIR/validate_integration_plan.py" \
-        --plan "$PLAN_FILE" \
-        --packages-dir "$PACKAGES_DIR" \
-        --contracts "$TMP_DIR/contracts.json" \
-        --output "$VALIDATION_FILE" > /dev/null 2>&1 || VALIDATE_EXIT=$?
+    VALIDATE_ARGS=(
+        --plan "$PLAN_FILE"
+        --packages-dir "$PACKAGES_DIR"
+        --contracts "$TMP_DIR/contracts.json"
+        --output "$VALIDATION_FILE"
+    )
+    if [[ -f "$PROJECT_CONFIG" ]]; then
+        VALIDATE_ARGS+=(--project-config "$PROJECT_CONFIG")
+    fi
+
+    python3 "$SCRIPT_DIR/validate_integration_plan.py" "${VALIDATE_ARGS[@]}" > /dev/null 2>&1 || VALIDATE_EXIT=$?
 
     VALIDATION_RESULT=$(python3 -c "import json; print(json.load(open('$VALIDATION_FILE')).get('result', 'UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
 
