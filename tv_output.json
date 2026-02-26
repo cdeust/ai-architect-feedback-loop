@@ -1,0 +1,12 @@
+{
+  "source": "self-test",
+  "findings": [
+    {
+      "id": "st-001",
+      "title": "Add structured error codes to validate_prd_output.py",
+      "description": "The PRD validator reports failures as plain text strings. Adding structured error codes (e.g., ERR_MISSING_SECTION, ERR_WORD_COUNT) would enable programmatic retry logic in the retry orchestrator to target specific deficiencies rather than re-running the entire PRD generation.",
+      "relevance_category": "api_change",
+      "relevance_score": 0.85
+    }
+  ]
+}
