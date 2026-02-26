@@ -230,7 +230,7 @@ for validation_file in "${_scan_s3_files[@]}"; do
     if [[ "$RESULT" == "ACCEPTED" ]]; then
         FINDING_ID=$(python3 -c "import json; print(json.load(open('$validation_file')).get('finding_id', ''))" 2>/dev/null || echo "")
         if [[ -n "$FINDING_ID" ]]; then
-            local already=false
+            already=false
             for existing in "${ACCEPTED_FINDINGS[@]+"${ACCEPTED_FINDINGS[@]}"}"; do
                 [[ "$existing" == "$FINDING_ID" ]] && already=true && break
             done

@@ -216,7 +216,7 @@ for validation_file in "${_scan_validation_files[@]}"; do
                 continue
             fi
             # Avoid duplicates from both scan paths
-            local already=false
+            already=false
             for existing in "${ACCEPTED_FINDINGS[@]+"${ACCEPTED_FINDINGS[@]}"}"; do
                 [[ "$existing" == "$FINDING_ID" ]] && already=true && break
             done
