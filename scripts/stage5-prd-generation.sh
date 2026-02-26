@@ -447,12 +447,15 @@ RETRY_EOF
         fi
 
         # Invoke AI analysis (builder-dir for skill access)
-        RAW_OUTPUT="$TMP_DIR/raw_${FINDING_ID}_${PRD_ATTEMPT}.json"
+        # NOTE: No --output-format json here — Stage 5 relies on Claude using
+        # the Write tool to create PRD files on disk. --max-turns 20 allows
+        # multi-turn tool use. Claude's text output goes to RAW_OUTPUT.
+        RAW_OUTPUT="$TMP_DIR/raw_${FINDING_ID}_${PRD_ATTEMPT}.txt"
         CLAUDE_EXIT=0
 
         cd "$BUILDER_DIR"
         ai_invoke "$CURRENT_PROMPT" "$RAW_OUTPUT" "stage5" "$FINDING_ID" \
-            --output-format json --max-turns 20 \
+            --max-turns 20 \
             || CLAUDE_EXIT=$?
 
         if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
@@ -463,24 +466,42 @@ RETRY_EOF
             continue
         fi
 
-        # Collect PRD output files from builder dir (Claude writes them there)
+        # Collect PRD output files — search builder dir AND common subdirs
         PRD_FILES_FOUND=0
         for prd_file in prd.md prd-verification.md prd-jira.md prd-tests.md; do
-            if [[ -f "$BUILDER_DIR/$prd_file" ]]; then
-                cp "$BUILDER_DIR/$prd_file" "$WORKSPACE/$prd_file"
-                rm -f "$BUILDER_DIR/$prd_file"
-                PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
-            fi
+            # Check multiple locations where Claude might have written them
+            for search_dir in "$BUILDER_DIR" "$BUILDER_DIR/docs" "$BUILDER_DIR/prd"; do
+                if [[ -f "$search_dir/$prd_file" ]]; then
+                    cp "$search_dir/$prd_file" "$WORKSPACE/$prd_file"
+                    rm -f "$search_dir/$prd_file"
+                    PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
+                    break
+                fi
+            done
         done
 
-        # Fallback: extract PRD files from raw AI output if none written to disk
-        if [[ "$PRD_FILES_FOUND" -eq 0 && -f "$RAW_OUTPUT" ]]; then
-            log "INFO" "No files on disk — extracting PRD from AI output for $FINDING_ID"
+        # Also search recursively if still nothing found (Claude may nest files)
+        if [[ "$PRD_FILES_FOUND" -eq 0 ]]; then
+            while IFS= read -r found_file; do
+                fname=$(basename "$found_file")
+                case "$fname" in
+                    prd.md|prd-verification.md|prd-jira.md|prd-tests.md)
+                        cp "$found_file" "$WORKSPACE/$fname"
+                        rm -f "$found_file"
+                        PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
+                        ;;
+                esac
+            done < <(find "$BUILDER_DIR" -maxdepth 3 -name "prd*.md" -newer "$RAW_OUTPUT" 2>/dev/null || true)
+        fi
+
+        # Fallback: extract PRD content from the raw AI text output
+        if [[ "$PRD_FILES_FOUND" -eq 0 && -f "$RAW_OUTPUT" && -s "$RAW_OUTPUT" ]]; then
+            log "INFO" "No files on disk — extracting PRD from AI text output for $FINDING_ID"
             EXTRACT_COUNT=$(python3 "$SCRIPT_DIR/extract_prd_from_ai.py" \
                 "$RAW_OUTPUT" "$WORKSPACE" 2>&1 | tail -1 || echo "0")
             if [[ "$EXTRACT_COUNT" =~ ^[0-9]+$ && "$EXTRACT_COUNT" -gt 0 ]]; then
                 PRD_FILES_FOUND=$EXTRACT_COUNT
-                log "INFO" "Extracted $EXTRACT_COUNT PRD file(s) from AI output"
+                log "INFO" "Extracted $EXTRACT_COUNT PRD file(s) from AI text output"
             fi
         fi
 

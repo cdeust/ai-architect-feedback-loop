@@ -152,6 +152,10 @@ def check_propagation_paths(report, engine_graph):
             invalid.append(f"{from_engine}->{to_engine} (engine not in graph)")
             continue
 
+        # Self-loops are valid (intra-module propagation)
+        if from_engine == to_engine:
+            continue
+
         # to must be in feeds or depended_by of from
         from_data = engines.get(from_engine, {})
         reachable = set(from_data.get("feeds", []) + from_data.get("depended_by", []))
