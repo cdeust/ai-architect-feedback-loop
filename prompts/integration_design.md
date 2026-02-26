@@ -47,7 +47,9 @@ quarter, would this design handle their cases without further changes?" If not, 
 6. Test files CAN be new, but MUST be under the relevant module's test directory
 
 ## Output Format
-Respond with ONLY a JSON object matching this schema (no markdown, no explanation):
+CRITICAL: Your entire response must be a single JSON object. No text before it, no
+text after it, no markdown fences, no explanation. Output ONLY valid JSON matching
+this schema:
 {{INTEGRATION_PLAN_SCHEMA}}
 
 ## Example
