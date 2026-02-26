@@ -267,7 +267,7 @@ run_stage "stage5_prd_generation" \
 run_stage "stage6_prd_review" \
     "$SCRIPTS_DIR/stage6-prd-review.sh" \
         --run-dir "$RUN_DIR" \
-        --engine-graph "$CONFIG_DIR/engine_graph.json" \
+        --builder-dir "$BUILDER_DIR" \
         --config "$CONFIG_DIR/thresholds.json" \
         --output "$RUN_DIR" \
     || { log "ERROR" "PRD review failed"; handle_fatal_failure; }

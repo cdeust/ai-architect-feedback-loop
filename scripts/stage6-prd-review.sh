@@ -99,8 +99,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate required args
-for arg_name in RUN_DIR BUILDER_DIR FINDING_ID OUTPUT_DIR; do
+# Validate required args (finding-id is optional — will auto-discover)
+for arg_name in RUN_DIR BUILDER_DIR OUTPUT_DIR; do
     if [[ -z "${!arg_name}" ]]; then
         log "ERROR" "Missing required argument: --$(echo "$arg_name" | tr '_' '-' | tr '[:upper:]' '[:lower:]')"
         exit 1
@@ -113,6 +113,45 @@ if [[ ! -d "$RUN_DIR" ]]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
+
+# Auto-discover findings if --finding-id not provided
+if [[ -z "$FINDING_ID" ]]; then
+    FINDING_IDS=()
+    # Look for stage5-prd directories (new layout: findings/<fid>/stage5-prd/)
+    if [[ -d "$RUN_DIR/findings" ]]; then
+        for fid_dir in "$RUN_DIR/findings"/*/stage5-prd; do
+            [[ -d "$fid_dir" && -f "$fid_dir/prd.md" ]] || continue
+            fid=$(basename "$(dirname "$fid_dir")")
+            FINDING_IDS+=("$fid")
+        done
+    fi
+    # Also look for flat layout (prd_output_<fid>/)
+    for prd_dir in "$RUN_DIR"/prd_output_*/prd.md "$RUN_DIR"/stage5-prd/prd.md; do
+        [[ -f "$prd_dir" ]] || continue
+        dir=$(dirname "$prd_dir")
+        base=$(basename "$dir")
+        if [[ "$base" == "stage5-prd" ]]; then
+            continue  # handled by findings/ scan
+        fi
+        fid="${base#prd_output_}"
+        FINDING_IDS+=("$fid")
+    done
+
+    if [[ ${#FINDING_IDS[@]} -eq 0 ]]; then
+        log "INFO" "No PRDs found to review — skipping stage 6"
+        exit 0
+    fi
+
+    log "INFO" "Found ${#FINDING_IDS[@]} PRD(s) to review"
+    OVERALL_EXIT=0
+    for fid in "${FINDING_IDS[@]}"; do
+        log "INFO" "Reviewing PRD for finding: $fid"
+        "$0" --run-dir "$RUN_DIR" --builder-dir "$BUILDER_DIR" \
+            --config "$CONFIG_PATH" --finding-id "$fid" --output "$OUTPUT_DIR" \
+            --timeout "$TIMEOUT" || OVERALL_EXIT=$?
+    done
+    exit "$OVERALL_EXIT"
+fi
 
 # ---------------------------------------------------------------------------
 # Temp directory with cleanup

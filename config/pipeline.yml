@@ -146,7 +146,7 @@ thresholds:
     - benchmarks
   stage_2:
     compound_score_minimum: 0.3
-    engines_affected_minimum: 2
+    engines_affected_minimum: 1
   stage_5:
     prd_quality_minimum: 0.85
   stage_10:
