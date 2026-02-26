@@ -270,23 +270,29 @@ echo "$INTEGRATION_PLAN" > "$TMP_DIR/integration_plan.txt"
 echo "$CROSS_ENGINE_TOUCHPOINTS" > "$TMP_DIR/touchpoints.txt"
 echo "$ANTI_PATTERNS" > "$TMP_DIR/anti_patterns.txt"
 
+ARCHITECTURE_MD="$SCRIPT_DIR/../config/architecture.md"
+
 python3 - "$PROMPT_TEMPLATE" "$TMP_DIR/prd_content.txt" \
     "$TMP_DIR/git_diff.txt" "$TMP_DIR/integration_plan.txt" \
     "$TMP_DIR/touchpoints.txt" "$TMP_DIR/anti_patterns.txt" \
-    "$FINDING_ID" "$TMP_DIR/prompt.md" <<'PYEOF'
+    "$FINDING_ID" "$ARCHITECTURE_MD" "$TMP_DIR/prompt.md" <<'PYEOF'
 import sys
 
 (template_path, prd_path, diff_path, plan_path,
- touchpoints_path, patterns_path, finding_id, output_path) = sys.argv[1:9]
+ touchpoints_path, patterns_path, finding_id, arch_path, output_path) = sys.argv[1:10]
 
 with open(template_path) as f:
     template = f.read()
 
 def read_file(p):
-    with open(p) as f:
-        return f.read()
+    try:
+        with open(p) as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
 
 result = template
+result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", read_file(arch_path))
 result = result.replace("{{UPGRADE_PRD}}", read_file(prd_path))
 result = result.replace("{{GIT_DIFF}}", read_file(diff_path))
 result = result.replace("{{INTEGRATION_PLAN}}", read_file(plan_path))

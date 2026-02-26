@@ -340,12 +340,14 @@ print(' '.join(report.get('affected_engines', [])))
     echo "$FILE_TREE" > "$TMP_DIR/file_tree_${FINDING_ID}.txt"
     echo "$INTEGRATION_PLAN_SCHEMA" > "$TMP_DIR/schema.txt"
 
+    ARCHITECTURE_MD="$SCRIPT_DIR/../config/architecture.md"
+
     python3 - "$PROMPT_TEMPLATE_PATH" "$IMPACT_REPORT" "$TMP_DIR/contracts_${FINDING_ID}.md" \
         "$TMP_DIR/claude_md_rules.txt" "$TMP_DIR/file_tree_${FINDING_ID}.txt" \
-        "$TMP_DIR/schema.txt" "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
+        "$TMP_DIR/schema.txt" "$ARCHITECTURE_MD" "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
 import sys
 
-template_path, impact_path, contracts_path, claude_md_path, file_tree_path, schema_path, output_path = sys.argv[1:8]
+template_path, impact_path, contracts_path, claude_md_path, file_tree_path, schema_path, arch_path, output_path = sys.argv[1:9]
 
 with open(template_path) as f:
     template = f.read()
@@ -359,8 +361,15 @@ with open(file_tree_path) as f:
     file_tree = f.read()
 with open(schema_path) as f:
     schema = f.read()
+arch = ""
+try:
+    with open(arch_path) as f:
+        arch = f.read()
+except FileNotFoundError:
+    pass
 
 result = template
+result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", arch)
 result = result.replace("{{CLAUDE_MD_RULES}}", claude_md)
 result = result.replace("{{IMPACT_REPORT}}", impact_report)
 result = result.replace("{{ENGINE_CONTRACTS}}", contracts)

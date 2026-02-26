@@ -327,12 +327,14 @@ print(' '.join(sorted(primary)))
     echo "$IMPACT_REPORT_SCHEMA" > "$TMP_DIR/schema.txt"
     echo "$CATEGORY_MAPPING" > "$TMP_DIR/category_mapping_${PROCESSED}.txt"
 
+    ARCHITECTURE_MD="$SCRIPT_DIR/../config/architecture.md"
+
     python3 - "$PROMPT_TEMPLATE_PATH" "$ENGINE_GRAPH" "$TMP_DIR/contracts.md" \
         "$FINDING_FILE" "$TMP_DIR/schema.txt" "$TMP_DIR/category_mapping_${PROCESSED}.txt" \
-        "$CONFIG_PATH" "$TMP_DIR/prompt_${PROCESSED}.md" <<'PYEOF'
+        "$CONFIG_PATH" "$ARCHITECTURE_MD" "$TMP_DIR/prompt_${PROCESSED}.md" <<'PYEOF'
 import json, sys
 
-template_path, engine_graph_path, contracts_path, finding_path, schema_path, cat_map_path, config_path, output_path = sys.argv[1:9]
+template_path, engine_graph_path, contracts_path, finding_path, schema_path, cat_map_path, config_path, arch_path, output_path = sys.argv[1:10]
 
 with open(template_path) as f:
     template = f.read()
@@ -346,6 +348,12 @@ with open(schema_path) as f:
     schema = f.read()
 with open(cat_map_path) as f:
     category_mapping = f.read()
+arch = ""
+try:
+    with open(arch_path) as f:
+        arch = f.read()
+except FileNotFoundError:
+    pass
 
 # Read thresholds for prompt injection
 engines_min = 2
@@ -360,6 +368,7 @@ if config_path:
         pass
 
 result = template
+result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", arch)
 result = result.replace("{{ENGINE_GRAPH}}", engine_graph)
 result = result.replace("{{CATEGORY_ENGINE_MAP}}", category_mapping)
 result = result.replace("{{ENGINE_CONTRACTS}}", contracts)
