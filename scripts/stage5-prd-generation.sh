@@ -38,7 +38,7 @@ log() {
 
 run_with_timeout() {
     local secs="$1"; local outfile="$2"; shift 2
-    "$@" > "$outfile" 2>/dev/null &
+    "$@" > "$outfile" 2>"${outfile}.stderr" &
     local cmd_pid=$!
     ( sleep "$secs" && kill "$cmd_pid" 2>/dev/null ) &
     local watcher_pid=$!
@@ -447,12 +447,12 @@ RETRY_EOF
         fi
 
         # Invoke AI analysis (builder-dir for skill access)
-        RAW_OUTPUT="$TMP_DIR/raw_${FINDING_ID}_${PRD_ATTEMPT}.txt"
+        RAW_OUTPUT="$TMP_DIR/raw_${FINDING_ID}_${PRD_ATTEMPT}.json"
         CLAUDE_EXIT=0
 
         cd "$BUILDER_DIR"
         ai_invoke "$CURRENT_PROMPT" "$RAW_OUTPUT" "stage5" "$FINDING_ID" \
-            --max-turns 20 \
+            --output-format json --max-turns 20 \
             || CLAUDE_EXIT=$?
 
         if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
@@ -472,6 +472,17 @@ RETRY_EOF
                 PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
             fi
         done
+
+        # Fallback: extract PRD files from raw AI output if none written to disk
+        if [[ "$PRD_FILES_FOUND" -eq 0 && -f "$RAW_OUTPUT" ]]; then
+            log "INFO" "No files on disk — extracting PRD from AI output for $FINDING_ID"
+            EXTRACT_COUNT=$(python3 "$SCRIPT_DIR/extract_prd_from_ai.py" \
+                "$RAW_OUTPUT" "$WORKSPACE" 2>&1 | tail -1 || echo "0")
+            if [[ "$EXTRACT_COUNT" =~ ^[0-9]+$ && "$EXTRACT_COUNT" -gt 0 ]]; then
+                PRD_FILES_FOUND=$EXTRACT_COUNT
+                log "INFO" "Extracted $EXTRACT_COUNT PRD file(s) from AI output"
+            fi
+        fi
 
         if [[ "$PRD_FILES_FOUND" -eq 0 ]]; then
             log "WARN" "No PRD files generated for $FINDING_ID (attempt $PRD_ATTEMPT)"
