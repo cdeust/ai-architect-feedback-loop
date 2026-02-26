@@ -22,10 +22,10 @@
     "compound_score_minimum": 0.3,
     "engines_affected_minimum": 2
   },
-  "stage_4": {
+  "stage_5": {
     "prd_quality_minimum": 0.85
   },
-  "stage_6": {
+  "stage_10": {
     "prohibited_patterns_file": "config/prohibited_patterns.txt",
     "orphan_detection_extensions": "from_project_config",
     "orphan_detection_exclude_dirs": [
@@ -36,7 +36,7 @@
       "benchmarks"
     ]
   },
-  "stage_8": {
+  "stage_12": {
     "regression_threshold": 0.05,
     "dimensions": [
       "completeness",

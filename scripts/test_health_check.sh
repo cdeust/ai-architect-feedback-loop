@@ -124,14 +124,14 @@ else
     fi
 fi
 
-if echo "$OUTPUT" | grep -q "Stage 10 PR creation"; then
-    pass "Error message references Stage 10"
+if echo "$OUTPUT" | grep -q "Stage 14 PR creation"; then
+    pass "Error message references Stage 14"
 else
     # Check with restricted PATH
-    if echo "${OUTPUT2:-}" | grep -q "Stage 10"; then
-        pass "Error message references Stage 10"
+    if echo "${OUTPUT2:-}" | grep -q "Stage 14"; then
+        pass "Error message references Stage 14"
     else
-        fail "Error message does not reference Stage 10"
+        fail "Error message does not reference Stage 14"
     fi
 fi
 

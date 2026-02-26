@@ -2,560 +2,823 @@
 set -euo pipefail
 
 # ============================================================================
-# test_stage10.sh — Integration tests for Stage 10 pull request creation
+# test_stage10.sh — Integration tests for Stage 10 Enforcement Gates
 # ============================================================================
 #
-# Tests stage10-pull-request.sh with mock gh CLI and mock make.
+# Covers:
+#   IT-005 (AC-E1-012): Gate 1 — prohibited pattern detection
+#   IT-006 (AC-E1-012): Gate 1 — clean pass when no violations
+#   IT-007 (AC-E1-012): Gate 1 — skips when no patterns file
+#   IT-008 (AC-E1-013): Gate 2 — manifest compliance violations
+#   IT-009 (AC-E1-013): Gate 2 — passes with no manifest
+#   IT-010 (AC-E1-014): Gate 3 — orphan file detection
+#   IT-011 (AC-E1-014): Gate 3 — no orphans when types referenced
+#   IT-012 (AC-E1-015): Skip gate functionality (--skip-gate)
+#   IT-013 (AC-E1-016): Report schema validation
+#   IT-014 (AC-E1-017): Overall FAIL when any gate fails
+#   IT-015 (AC-E1-017): Overall PASS when all gates pass
+#   IT-016 (AC-E1-012): Structured log output
 #
-# Test cases:
-#   IT-E4-009: PR created via mock gh pr create
-#   IT-E4-010: Labels include pipeline-generated,improvement,{engines}
-#   IT-E4-011: make sync-staging executes after PR
-#   IT-E4-012: PR description contains pipeline metadata
-#   IT-E4-013: Mock gh issue create invoked with correct labels
-#   IT-E4-014: Issue content has structured failure report
+# Usage:
+#   bash scripts/test_stage10.sh
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STAGE10_SCRIPT="$SCRIPT_DIR/stage10-gates.sh"
 
-# Resolve base branch from project config
-BASE_BRANCH="main"
-PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
-if [[ -f "$PROJECT_CONFIG" ]]; then
-    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
-fi
-
+TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
-TESTS_RUN=0
 
-pass_test() {
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+pass() {
     TESTS_PASSED=$((TESTS_PASSED + 1))
-    TESTS_RUN=$((TESTS_RUN + 1))
     echo "  PASS: $1"
 }
 
-fail_test() {
+fail() {
     TESTS_FAILED=$((TESTS_FAILED + 1))
+    echo "  FAIL: $1"
+}
+
+run_test() {
     TESTS_RUN=$((TESTS_RUN + 1))
-    echo "  FAIL: $1 — $2"
+    echo ""
+    echo "--- $1 ---"
+}
+
+# Create a minimal builder dir with packages and library dirs, plus a git repo
+make_builder_dir() {
+    local dir="$1"
+    mkdir -p "$dir/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities"
+    mkdir -p "$dir/packages/AIPRDSharedUtilities/Tests"
+    mkdir -p "$dir/library/Sources"
+    mkdir -p "$dir/library/Tests"
+    # Initialize a git repo so git-based gates work
+    (cd "$dir" && git init -q && git config user.email "test@test.com" && git config user.name "Test")
+}
+
+make_config() {
+    local dir="$1"
+    cat > "$dir/thresholds.json" <<'EOF'
+{
+  "stage_1": {
+    "relevance_score_minimum": 0.5,
+    "relevance_categories": [
+      "api_change", "behavior_change", "dependency_change", "config_change",
+      "schema_change", "performance_change", "security_change",
+      "prompting", "retrieval", "verification", "embeddings",
+      "inference", "cost_optimization", "benchmarks"
+    ]
+  }
+}
+EOF
+}
+
+make_patterns_file() {
+    local file="$1"
+    cat > "$file" <<'EOF'
+TODO
+FIXME
+HACK
+@_exported\s+import
+\btypealias\b
+EOF
+}
+
+# Create a Makefile in builder dir with stub targets for gates 4-6
+make_builder_makefile() {
+    local dir="$1"
+    local build_exit="${2:-0}"
+    local test_exit="${3:-0}"
+    local dist_exit="${4:-0}"
+    cat > "$dir/Makefile" <<EOF
+.PHONY: build-library test-all distribute
+build-library:
+	@echo "Build OK"
+	@exit $build_exit
+test-all:
+	@echo "Test Suite passed"
+	@exit $test_exit
+distribute:
+	@echo "Distribution OK"
+	@exit $dist_exit
+EOF
 }
 
 # ---------------------------------------------------------------------------
-# Setup helpers
+# IT-005: Gate 1 — Prohibited Pattern Detection (violations found)
 # ---------------------------------------------------------------------------
 
-setup_mock_builder_repo() {
-    local builder_dir="$1"
+run_test "IT-005: Gate 1 detects prohibited patterns"
 
-    mkdir -p "$builder_dir/packages/AIPRDRAGEngine/Sources"
-    mkdir -p "$builder_dir/packages/AIPRDOrchestrationEngine/Sources"
-    mkdir -p "$builder_dir/library/Sources"
+TMPDIR_005=$(mktemp -d)
+BUILDER_005="$TMPDIR_005/builder"
+RUN_DIR_005="$TMPDIR_005/runs/test"
+CONFIG_005="$TMPDIR_005/config"
+PATTERNS_005="$TMPDIR_005/patterns.txt"
 
-    cat > "$builder_dir/packages/AIPRDRAGEngine/Sources/RAGEngine.swift" <<'EOF'
-public struct RAGEngine {}
-EOF
+make_builder_dir "$BUILDER_005"
+mkdir -p "$RUN_DIR_005" "$CONFIG_005"
+make_config "$CONFIG_005"
+make_builder_makefile "$BUILDER_005"
+make_patterns_file "$PATTERNS_005"
 
-    cat > "$builder_dir/CLAUDE.md" <<'EOF'
-# Architecture Rules
-EOF
+# Create a Swift file WITH prohibited patterns
+cat > "$BUILDER_005/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/BadFile.swift" <<'SWIFT'
+import Foundation
 
-    # Makefile with sync-staging target
-    cat > "$builder_dir/Makefile" <<'EOF'
-.PHONY: sync-staging
-sync-staging:
-	@echo "Syncing to staging..."
-EOF
-
-    git -C "$builder_dir" init -b "$BASE_BRANCH" > /dev/null 2>&1
-    git -C "$builder_dir" add . > /dev/null 2>&1
-    git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
-        commit -m "Initial commit" > /dev/null 2>&1
-
-    # Add fake remote
-    git -C "$builder_dir" remote add origin "https://github.com/test/target-product.git" 2>/dev/null || true
-
-    # Create feature branch with a change
-    git -C "$builder_dir" checkout -b "pipeline/improvement-tv-pr" > /dev/null 2>&1
-    echo "// improvement" >> "$builder_dir/packages/AIPRDRAGEngine/Sources/RAGEngine.swift"
-    git -C "$builder_dir" add -A > /dev/null 2>&1
-    git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
-        commit -m "feat: implement improvement" > /dev/null 2>&1
-    git -C "$builder_dir" checkout "$BASE_BRANCH" > /dev/null 2>&1
+// TODO: Fix this later
+public struct BadStruct {
+    @_exported import CryptoKit
+    public typealias Foo = String
 }
+SWIFT
 
-setup_pipeline_outputs() {
-    local run_dir="$1"
+# Create initial commit so git works
+(cd "$BUILDER_005" && git add -A && git commit -q -m "initial")
 
-    # Impact report
-    cat > "$run_dir/impact_report_tv-pr.json" <<'EOF'
-{
-  "finding_id": "tv-pr",
-  "finding_title": "RAGEngine Scoring Improvement",
-  "finding_category": "retrieval",
-  "affected_engines": ["RAGEngine", "OrchestrationEngine"],
-  "compound_score": 0.65,
-  "propagation_paths": [{"from": "RAGEngine", "to": "OrchestrationEngine", "relationship": "feeds"}],
-  "recommendation": "PROCEED"
-}
-EOF
+# Run with skip on gates 4-6 (no real build needed)
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_005" \
+    --config "$CONFIG_005/thresholds.json" \
+    --patterns "$PATTERNS_005" \
+    --output "$RUN_DIR_005" \
+    --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
 
-    # Integration plan
-    cat > "$run_dir/integration_plan_tv-pr.json" <<'EOF'
-{
-  "finding_id": "tv-pr",
-  "affected_engines": ["RAGEngine", "OrchestrationEngine"],
-  "modifications": [],
-  "cross_engine_touchpoints": [],
-  "new_files": [],
-  "test_files": [],
-  "constraints": {}
-}
-EOF
-
-    # PRD output
-    mkdir -p "$run_dir/prd_output_tv-pr"
-    cat > "$run_dir/prd_output_tv-pr/prd.md" <<'EOF'
-# Feature PRD
-## Requirements
-- FR-TV001-1: Test requirement
-**Overall Score:** 90%
-EOF
-
-    # Enforcement report
-    cat > "$run_dir/enforcement_report.json" <<'EOF'
-{
-  "stage": "enforcement",
-  "overall_result": "PASS",
-  "gates": [
-    {"gate": 1, "name": "prohibited_patterns", "result": "PASS", "duration_seconds": 1},
-    {"gate": 4, "name": "build_verification", "result": "PASS", "duration_seconds": 30},
-    {"gate": 5, "name": "test_suite", "result": "PASS", "duration_seconds": 20}
-  ]
-}
-EOF
-
-    # Verification result
-    cat > "$run_dir/verification_stage7_tv-pr.json" <<'EOF'
-{
-  "stage": "semantic_verification",
-  "finding_id": "tv-pr",
-  "overall_result": "PASS",
-  "confidence": 0.87,
-  "prd_alignment_score": 0.92,
-  "findings": [],
-  "cross_engine_verification": {"touchpoints_verified": 1, "touchpoints_total": 1, "result": "PASS"},
-  "anti_patterns_detected": [],
-  "requirements_traced": {"total": 1, "matched": 1, "missing": []}
-}
-EOF
-}
-
-create_mock_tools() {
-    local mock_dir="$1"
-
-    mkdir -p "$mock_dir"
-
-    # Mock gh CLI
-    local gh_log="$mock_dir/.gh_log"
-    local pr_body_capture="$mock_dir/.pr_body"
-    : > "$gh_log"
-    : > "$pr_body_capture"
-
-    cat > "$mock_dir/gh" <<MOCKEOF
-#!/usr/bin/env bash
-echo "ARGS: \$@" >> "$gh_log"
-
-if [[ "\$1" == "auth" ]]; then
-    exit 0
-elif [[ "\$1" == "pr" && "\$2" == "create" ]]; then
-    # Capture all args
-    echo "PR_CREATE: \$@" >> "$gh_log"
-    # Extract --body content
-    CAPTURE_BODY=false
-    for arg in "\$@"; do
-        if [[ "\$CAPTURE_BODY" == "true" ]]; then
-            echo "\$arg" > "$pr_body_capture"
-            CAPTURE_BODY=false
-        fi
-        if [[ "\$arg" == "--body" ]]; then
-            CAPTURE_BODY=true
-        fi
-    done
-    echo "https://github.com/test/target-product/pull/42"
-elif [[ "\$1" == "issue" && "\$2" == "create" ]]; then
-    echo "ISSUE_CREATE: \$@" >> "$gh_log"
-    echo "https://github.com/test/target-product/issues/99"
+if [[ "$EXIT_CODE" -ne 0 ]]; then
+    pass "Exit code non-zero when violations found"
+else
+    fail "Expected non-zero exit code when violations found, got 0"
 fi
-MOCKEOF
-    chmod +x "$mock_dir/gh"
 
-    # Mock git push (to avoid actual remote push)
-    cat > "$mock_dir/git" <<'MOCKEOF'
-#!/usr/bin/env bash
-# Pass through all git commands except push
-if [[ "$1" == "push" || ("$1" == "-C" && "$3" == "push") ]]; then
-    echo "Mock: git push skipped"
-    exit 0
+if [[ -f "$RUN_DIR_005/enforcement_report.json" ]]; then
+    GATE1_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_005/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==1][0]; print(g['result'])")
+    if [[ "$GATE1_RESULT" == "FAIL" ]]; then
+        pass "Gate 1 result is FAIL when violations exist"
+    else
+        fail "Expected Gate 1 FAIL, got $GATE1_RESULT"
+    fi
+
+    VIOLATIONS=$(python3 -c "import json; r=json.load(open('$RUN_DIR_005/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==1][0]; print(g['details']['violations_found'])")
+    if [[ "$VIOLATIONS" -gt 0 ]]; then
+        pass "Violations count > 0 ($VIOLATIONS found)"
+    else
+        fail "Expected violations > 0, got $VIOLATIONS"
+    fi
+else
+    fail "enforcement_report.json not created"
 fi
-# Fall through to real git
-exec /usr/bin/git "$@"
-MOCKEOF
-    chmod +x "$mock_dir/git"
 
-    # Mock make for sync-staging
-    local make_log="$mock_dir/.make_log"
-    : > "$make_log"
+rm -rf "$TMPDIR_005"
 
-    cat > "$mock_dir/make" <<MOCKEOF
-#!/usr/bin/env bash
-echo "MAKE: \$@" >> "$make_log"
-# Handle -n (dry run) check
-for arg in "\$@"; do
-    if [[ "\$arg" == "-n" ]]; then
-        exit 0
-    fi
-done
-# Handle sync-staging
-for arg in "\$@"; do
-    if [[ "\$arg" == "sync-staging" ]]; then
-        echo "Syncing to staging..."
-        exit 0
-    fi
-done
-# Pass through other make calls
-exec /usr/bin/make "\$@"
-MOCKEOF
-    chmod +x "$mock_dir/make"
+# ---------------------------------------------------------------------------
+# IT-006: Gate 1 — Clean Pass (no violations)
+# ---------------------------------------------------------------------------
+
+run_test "IT-006: Gate 1 passes when no violations"
+
+TMPDIR_006=$(mktemp -d)
+BUILDER_006="$TMPDIR_006/builder"
+RUN_DIR_006="$TMPDIR_006/runs/test"
+CONFIG_006="$TMPDIR_006/config"
+PATTERNS_006="$TMPDIR_006/patterns.txt"
+
+make_builder_dir "$BUILDER_006"
+mkdir -p "$RUN_DIR_006" "$CONFIG_006"
+make_config "$CONFIG_006"
+make_builder_makefile "$BUILDER_006"
+make_patterns_file "$PATTERNS_006"
+
+# Create a CLEAN Swift file (no prohibited patterns)
+cat > "$BUILDER_006/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/CleanFile.swift" <<'SWIFT'
+import Foundation
+
+public struct CleanStruct {
+    public let name: String
+    public let value: Int
 }
+SWIFT
+
+(cd "$BUILDER_006" && git add -A && git commit -q -m "initial")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_006" \
+    --config "$CONFIG_006/thresholds.json" \
+    --patterns "$PATTERNS_006" \
+    --output "$RUN_DIR_006" \
+    --skip-gate 2 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+    pass "Exit code 0 when no violations"
+else
+    fail "Expected exit code 0, got $EXIT_CODE"
+fi
+
+GATE1_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_006/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==1][0]; print(g['result'])")
+if [[ "$GATE1_RESULT" == "PASS" ]]; then
+    pass "Gate 1 result is PASS when clean"
+else
+    fail "Expected Gate 1 PASS, got $GATE1_RESULT"
+fi
+
+rm -rf "$TMPDIR_006"
 
 # ---------------------------------------------------------------------------
-# IT-E4-009: PR created via mock gh pr create
+# IT-007: Gate 1 — No Patterns File
 # ---------------------------------------------------------------------------
 
-test_pr_created() {
-    echo "IT-E4-009: PR created via mock gh pr create"
+run_test "IT-007: Gate 1 skips when no patterns file"
 
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    local builder_dir="$tmpdir/builder"
-    local run_dir="$tmpdir/run_dir"
-    local output_dir="$tmpdir/output"
-    mkdir -p "$run_dir" "$output_dir"
+TMPDIR_007=$(mktemp -d)
+BUILDER_007="$TMPDIR_007/builder"
+RUN_DIR_007="$TMPDIR_007/runs/test"
 
-    setup_mock_builder_repo "$builder_dir"
-    setup_pipeline_outputs "$run_dir"
+make_builder_dir "$BUILDER_007"
+mkdir -p "$RUN_DIR_007"
+make_builder_makefile "$BUILDER_007"
+(cd "$BUILDER_007" && git add -A && git commit -q -m "initial")
 
-    local mock_dir="$tmpdir/mock_bin"
-    create_mock_tools "$mock_dir"
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_007" \
+    --output "$RUN_DIR_007" \
+    --skip-gate 2 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
 
-    local exit_code=0
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage10-pull-request.sh" \
-        --run-dir "$run_dir" \
-        --builder-dir "$builder_dir" \
-        --engine-graph "$SCRIPT_DIR/../config/engine_graph.json" \
-        --finding-id "tv-pr" \
-        --branch "pipeline/improvement-tv-pr" \
-        --output "$output_dir" \
-        > /dev/null 2>&1 || exit_code=$?
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+    pass "Exit code 0 when no patterns file"
+else
+    fail "Expected exit code 0 with no patterns file, got $EXIT_CODE"
+fi
 
-    if [[ -f "$mock_dir/.gh_log" ]] && grep -q "pr create" "$mock_dir/.gh_log"; then
-        # Check stage10_summary.json
-        if [[ -f "$output_dir/stage10_summary.json" ]]; then
-            local pr_url
-            pr_url=$(python3 -c "import json; print(json.load(open('$output_dir/stage10_summary.json'))['pr_url'])" 2>/dev/null || echo "")
-            if [[ "$pr_url" == *"pull/42"* ]]; then
-                pass_test "PR created with URL captured"
-            else
-                pass_test "PR created (gh pr create invoked)"
-            fi
-        else
-            pass_test "PR created (gh pr create invoked)"
-        fi
-    else
-        fail_test "PR creation" "gh pr create not invoked"
-    fi
+GATE1_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_007/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==1][0]; print(g['result'])")
+if [[ "$GATE1_RESULT" == "SKIP" ]]; then
+    pass "Gate 1 result is SKIP when no patterns file"
+else
+    fail "Expected Gate 1 SKIP, got $GATE1_RESULT"
+fi
 
-    rm -rf "$tmpdir"
-}
+rm -rf "$TMPDIR_007"
 
 # ---------------------------------------------------------------------------
-# IT-E4-010: Labels include engines
+# IT-008: Gate 2 — Manifest Compliance Violations
 # ---------------------------------------------------------------------------
 
-test_pr_labels() {
-    echo "IT-E4-010: Labels: pipeline-generated,improvement,RAGEngine"
+run_test "IT-008: Gate 2 detects manifest violations"
 
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    local builder_dir="$tmpdir/builder"
-    local run_dir="$tmpdir/run_dir"
-    local output_dir="$tmpdir/output"
-    mkdir -p "$run_dir" "$output_dir"
+TMPDIR_008=$(mktemp -d)
+BUILDER_008="$TMPDIR_008/builder"
+RUN_DIR_008="$TMPDIR_008/runs/test"
+MANIFEST_008="$TMPDIR_008/manifest.json"
 
-    setup_mock_builder_repo "$builder_dir"
-    setup_pipeline_outputs "$run_dir"
+make_builder_dir "$BUILDER_008"
+mkdir -p "$RUN_DIR_008"
+make_builder_makefile "$BUILDER_008"
 
-    local mock_dir="$tmpdir/mock_bin"
-    create_mock_tools "$mock_dir"
+# Create initial files and first commit
+cat > "$BUILDER_008/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Original.swift" <<'SWIFT'
+public struct Original {}
+SWIFT
+cat > "$BUILDER_008/library/Sources/Untouchable.swift" <<'SWIFT'
+public struct Untouchable {}
+SWIFT
+(cd "$BUILDER_008" && git add -A && git commit -q -m "initial")
 
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage10-pull-request.sh" \
-        --run-dir "$run_dir" \
-        --builder-dir "$builder_dir" \
-        --engine-graph "$SCRIPT_DIR/../config/engine_graph.json" \
-        --finding-id "tv-pr" \
-        --branch "pipeline/improvement-tv-pr" \
-        --output "$output_dir" \
-        > /dev/null 2>&1 || true
+# Modify the untouchable file (violates must_not_change)
+echo "// modified" >> "$BUILDER_008/library/Sources/Untouchable.swift"
+(cd "$BUILDER_008" && git add -A && git commit -q -m "second")
 
-    if [[ -f "$mock_dir/.gh_log" ]]; then
-        if grep -q "pipeline-generated" "$mock_dir/.gh_log" && grep -q "RAGEngine" "$mock_dir/.gh_log"; then
-            pass_test "Labels include pipeline-generated and RAGEngine"
-        elif grep -q "pipeline-generated" "$mock_dir/.gh_log"; then
-            pass_test "Labels include pipeline-generated"
-        else
-            fail_test "Labels" "Expected pipeline-generated and engine names"
-        fi
-    else
-        fail_test "Labels" "No gh log found"
-    fi
-
-    rm -rf "$tmpdir"
-}
-
-# ---------------------------------------------------------------------------
-# IT-E4-011: make sync-staging executes after PR
-# ---------------------------------------------------------------------------
-
-test_sync_staging() {
-    echo "IT-E4-011: make sync-staging executes after PR"
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    local builder_dir="$tmpdir/builder"
-    local run_dir="$tmpdir/run_dir"
-    local output_dir="$tmpdir/output"
-    mkdir -p "$run_dir" "$output_dir"
-
-    setup_mock_builder_repo "$builder_dir"
-    setup_pipeline_outputs "$run_dir"
-
-    local mock_dir="$tmpdir/mock_bin"
-    create_mock_tools "$mock_dir"
-
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage10-pull-request.sh" \
-        --run-dir "$run_dir" \
-        --builder-dir "$builder_dir" \
-        --engine-graph "$SCRIPT_DIR/../config/engine_graph.json" \
-        --finding-id "tv-pr" \
-        --branch "pipeline/improvement-tv-pr" \
-        --output "$output_dir" \
-        > /dev/null 2>&1 || true
-
-    if [[ -f "$mock_dir/.make_log" ]] && grep -q "sync-staging" "$mock_dir/.make_log"; then
-        pass_test "make sync-staging invoked"
-    else
-        # Check summary for sync result
-        if [[ -f "$output_dir/stage10_summary.json" ]]; then
-            local sync_result
-            sync_result=$(python3 -c "import json; print(json.load(open('$output_dir/stage10_summary.json')).get('sync_staging_result', ''))" 2>/dev/null || echo "")
-            if [[ -n "$sync_result" ]]; then
-                pass_test "Sync staging tracked in summary ($sync_result)"
-            else
-                fail_test "Sync staging" "Not invoked or tracked"
-            fi
-        else
-            fail_test "Sync staging" "make sync-staging not found in log"
-        fi
-    fi
-
-    rm -rf "$tmpdir"
-}
-
-# ---------------------------------------------------------------------------
-# IT-E4-012: PR description contains pipeline metadata
-# ---------------------------------------------------------------------------
-
-test_pr_description_metadata() {
-    echo "IT-E4-012: PR description contains pipeline metadata"
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    local builder_dir="$tmpdir/builder"
-    local run_dir="$tmpdir/run_dir"
-    local output_dir="$tmpdir/output"
-    mkdir -p "$run_dir" "$output_dir"
-
-    setup_mock_builder_repo "$builder_dir"
-    setup_pipeline_outputs "$run_dir"
-
-    local mock_dir="$tmpdir/mock_bin"
-    create_mock_tools "$mock_dir"
-
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage10-pull-request.sh" \
-        --run-dir "$run_dir" \
-        --builder-dir "$builder_dir" \
-        --engine-graph "$SCRIPT_DIR/../config/engine_graph.json" \
-        --finding-id "tv-pr" \
-        --branch "pipeline/improvement-tv-pr" \
-        --output "$output_dir" \
-        > /dev/null 2>&1 || true
-
-    if [[ -f "$mock_dir/.pr_body" ]]; then
-        local body
-        body=$(cat "$mock_dir/.pr_body")
-
-        local has_finding=false has_engines=false
-        echo "$body" | grep -q "tv-pr" && has_finding=true
-        echo "$body" | grep -q "RAGEngine" && has_engines=true
-
-        if [[ "$has_finding" == "true" && "$has_engines" == "true" ]]; then
-            pass_test "PR body contains finding ID and engine names"
-        elif [[ "$has_finding" == "true" ]]; then
-            pass_test "PR body contains finding ID"
-        else
-            fail_test "PR metadata" "Missing finding ID or engine names in PR body"
-        fi
-    else
-        # PR body might not have been captured — check summary exists
-        if [[ -f "$output_dir/stage10_summary.json" ]]; then
-            pass_test "Stage 10 summary produced (PR body capture unavailable)"
-        else
-            fail_test "PR metadata" "No PR body capture and no summary"
-        fi
-    fi
-
-    rm -rf "$tmpdir"
-}
-
-# ---------------------------------------------------------------------------
-# IT-E4-013: gh issue create with correct labels
-# ---------------------------------------------------------------------------
-
-test_issue_labels() {
-    echo "IT-E4-013: Mock gh issue create invoked with correct labels"
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    local mock_dir="$tmpdir/mock_bin"
-    create_mock_tools "$mock_dir"
-
-    # Test gh issue create directly
-    PATH="$mock_dir:$PATH" gh issue create \
-        --repo "https://github.com/test/repo" \
-        --title "Test issue" \
-        --body "Test body" \
-        --label "pipeline-failure" --label "needs-investigation" \
-        > /dev/null 2>&1
-
-    if [[ -f "$mock_dir/.gh_log" ]]; then
-        if grep -q "pipeline-failure" "$mock_dir/.gh_log" && grep -q "needs-investigation" "$mock_dir/.gh_log"; then
-            pass_test "Issue created with pipeline-failure and needs-investigation labels"
-        else
-            fail_test "Issue labels" "Expected pipeline-failure and needs-investigation"
-        fi
-    else
-        fail_test "Issue labels" "No gh log found"
-    fi
-
-    rm -rf "$tmpdir"
-}
-
-# ---------------------------------------------------------------------------
-# IT-E4-014: Issue content has structured failure report
-# ---------------------------------------------------------------------------
-
-test_issue_content() {
-    echo "IT-E4-014: Issue content has structured failure report"
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-
-    # Create a retry_state with failures
-    cat > "$tmpdir/retry_state.json" <<'EOF'
+# Create manifest: must_change a file that didn't change, must_not_change one that did
+cat > "$MANIFEST_008" <<'JSON'
 {
-  "finding_id": "tv-fail",
-  "max_attempts": 3,
-  "current_attempt": 3,
-  "attempts": [
-    {"attempt": 1, "failed_stage": "stage_6", "failed_gate": "gate_1", "failure_reason": "Prohibited pattern TODO"},
-    {"attempt": 2, "failed_stage": "stage_6", "failed_gate": "gate_4", "failure_reason": "Build failed"},
-    {"attempt": 3, "failed_stage": "stage_7", "failure_reason": "Missing FR-TV001-3"}
-  ]
+    "must_change": ["packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Original.swift"],
+    "must_not_change": ["library/Sources/Untouchable.swift"]
 }
-EOF
+JSON
 
-    # Generate issue body using the same Python logic as retry_orchestrator
-    local issue_body
-    issue_body=$(python3 - "$tmpdir/retry_state.json" "tv-fail" "3" <<'PYEOF'
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_008" \
+    --output "$RUN_DIR_008" \
+    --manifest "$MANIFEST_008" \
+    --skip-gate 1 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ "$EXIT_CODE" -ne 0 ]]; then
+    pass "Exit code non-zero with manifest violations"
+else
+    fail "Expected non-zero exit code with manifest violations, got 0"
+fi
+
+GATE2_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_008/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==2][0]; print(g['result'])")
+if [[ "$GATE2_RESULT" == "FAIL" ]]; then
+    pass "Gate 2 result is FAIL with manifest violations"
+else
+    fail "Expected Gate 2 FAIL, got $GATE2_RESULT"
+fi
+
+rm -rf "$TMPDIR_008"
+
+# ---------------------------------------------------------------------------
+# IT-009: Gate 2 — No Manifest (pass by default)
+# ---------------------------------------------------------------------------
+
+run_test "IT-009: Gate 2 passes with no manifest"
+
+TMPDIR_009=$(mktemp -d)
+BUILDER_009="$TMPDIR_009/builder"
+RUN_DIR_009="$TMPDIR_009/runs/test"
+
+make_builder_dir "$BUILDER_009"
+mkdir -p "$RUN_DIR_009"
+make_builder_makefile "$BUILDER_009"
+(cd "$BUILDER_009" && git add -A && git commit -q -m "initial")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_009" \
+    --output "$RUN_DIR_009" \
+    --skip-gate 1 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+    pass "Exit code 0 when no manifest"
+else
+    fail "Expected exit code 0 with no manifest, got $EXIT_CODE"
+fi
+
+GATE2_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_009/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==2][0]; print(g['result'])")
+if [[ "$GATE2_RESULT" == "PASS" ]]; then
+    pass "Gate 2 result is PASS with no manifest"
+else
+    fail "Expected Gate 2 PASS, got $GATE2_RESULT"
+fi
+
+rm -rf "$TMPDIR_009"
+
+# ---------------------------------------------------------------------------
+# IT-010: Gate 3 — Orphan File Detection
+# ---------------------------------------------------------------------------
+
+run_test "IT-010: Gate 3 detects orphan files"
+
+TMPDIR_010=$(mktemp -d)
+BUILDER_010="$TMPDIR_010/builder"
+RUN_DIR_010="$TMPDIR_010/runs/test"
+
+make_builder_dir "$BUILDER_010"
+mkdir -p "$RUN_DIR_010"
+make_builder_makefile "$BUILDER_010"
+
+# Create initial commit
+cat > "$BUILDER_010/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Core.swift" <<'SWIFT'
+public struct Core {
+    public let name: String
+}
+SWIFT
+(cd "$BUILDER_010" && git add -A && git commit -q -m "initial")
+
+# Add a new file with a type that's NOT referenced anywhere else
+cat > "$BUILDER_010/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/OrphanType.swift" <<'SWIFT'
+public struct NobodyUsesThis {
+    public let value: Int
+}
+SWIFT
+(cd "$BUILDER_010" && git add -A && git commit -q -m "add orphan")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_010" \
+    --output "$RUN_DIR_010" \
+    --skip-gate 1 --skip-gate 2 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ -f "$RUN_DIR_010/enforcement_report.json" ]]; then
+    GATE3_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_010/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==3][0]; print(g['result'])")
+    ORPHAN_COUNT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_010/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==3][0]; print(g['details']['orphans_found'])")
+
+    if [[ "$GATE3_RESULT" == "FAIL" ]]; then
+        pass "Gate 3 result is FAIL when orphans exist"
+    else
+        fail "Expected Gate 3 FAIL, got $GATE3_RESULT"
+    fi
+
+    if [[ "$ORPHAN_COUNT" -gt 0 ]]; then
+        pass "Orphan count > 0 ($ORPHAN_COUNT found)"
+    else
+        fail "Expected orphan count > 0, got $ORPHAN_COUNT"
+    fi
+else
+    fail "enforcement_report.json not created"
+fi
+
+rm -rf "$TMPDIR_010"
+
+# ---------------------------------------------------------------------------
+# IT-011: Gate 3 — No Orphans (referenced types)
+# ---------------------------------------------------------------------------
+
+run_test "IT-011: Gate 3 passes when types are referenced"
+
+TMPDIR_011=$(mktemp -d)
+BUILDER_011="$TMPDIR_011/builder"
+RUN_DIR_011="$TMPDIR_011/runs/test"
+
+make_builder_dir "$BUILDER_011"
+mkdir -p "$RUN_DIR_011"
+make_builder_makefile "$BUILDER_011"
+
+# Create initial commit with a referencing file
+cat > "$BUILDER_011/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Core.swift" <<'SWIFT'
+public struct Core {
+    public let name: String
+}
+SWIFT
+(cd "$BUILDER_011" && git add -A && git commit -q -m "initial")
+
+# Add a new file whose type IS referenced in Core.swift
+cat > "$BUILDER_011/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/UsedType.swift" <<'SWIFT'
+public struct UsedType {
+    public let value: Int
+}
+SWIFT
+# Update Core.swift to reference UsedType
+cat > "$BUILDER_011/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Core.swift" <<'SWIFT'
+public struct Core {
+    public let name: String
+    public let used: UsedType
+}
+SWIFT
+(cd "$BUILDER_011" && git add -A && git commit -q -m "add used type")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_011" \
+    --output "$RUN_DIR_011" \
+    --skip-gate 1 --skip-gate 2 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ -f "$RUN_DIR_011/enforcement_report.json" ]]; then
+    GATE3_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_011/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==3][0]; print(g['result'])")
+    if [[ "$GATE3_RESULT" == "PASS" ]]; then
+        pass "Gate 3 result is PASS when types are referenced"
+    else
+        fail "Expected Gate 3 PASS, got $GATE3_RESULT"
+    fi
+else
+    fail "enforcement_report.json not created"
+fi
+
+rm -rf "$TMPDIR_011"
+
+# ---------------------------------------------------------------------------
+# IT-012: Skip Gate Functionality
+# ---------------------------------------------------------------------------
+
+run_test "IT-012: Skip gate functionality (--skip-gate)"
+
+TMPDIR_012=$(mktemp -d)
+BUILDER_012="$TMPDIR_012/builder"
+RUN_DIR_012="$TMPDIR_012/runs/test"
+
+make_builder_dir "$BUILDER_012"
+mkdir -p "$RUN_DIR_012"
+make_builder_makefile "$BUILDER_012"
+
+cat > "$BUILDER_012/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/File.swift" <<'SWIFT'
+public struct Example {}
+SWIFT
+(cd "$BUILDER_012" && git add -A && git commit -q -m "initial")
+
+# Skip ALL gates
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_012" \
+    --output "$RUN_DIR_012" \
+    --skip-gate 1 --skip-gate 2 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+    pass "Exit code 0 when all gates skipped"
+else
+    fail "Expected exit code 0 with all skipped, got $EXIT_CODE"
+fi
+
+# Verify all 6 gates are SKIP in report
+SKIP_COUNT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_012/enforcement_report.json')); print(sum(1 for g in r['gates'] if g['result']=='SKIP'))")
+if [[ "$SKIP_COUNT" -eq 6 ]]; then
+    pass "All 6 gates marked as SKIP"
+else
+    fail "Expected 6 SKIP gates, got $SKIP_COUNT"
+fi
+
+GATE_COUNT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_012/enforcement_report.json')); print(len(r['gates']))")
+if [[ "$GATE_COUNT" -eq 6 ]]; then
+    pass "Report contains all 6 gate entries"
+else
+    fail "Expected 6 gate entries, got $GATE_COUNT"
+fi
+
+rm -rf "$TMPDIR_012"
+
+# ---------------------------------------------------------------------------
+# IT-013: Report Schema Validation
+# ---------------------------------------------------------------------------
+
+run_test "IT-013: Report schema has all required keys"
+
+TMPDIR_013=$(mktemp -d)
+BUILDER_013="$TMPDIR_013/builder"
+RUN_DIR_013="$TMPDIR_013/runs/test"
+
+make_builder_dir "$BUILDER_013"
+mkdir -p "$RUN_DIR_013"
+make_builder_makefile "$BUILDER_013"
+
+cat > "$BUILDER_013/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/File.swift" <<'SWIFT'
+public struct Example {}
+SWIFT
+(cd "$BUILDER_013" && git add -A && git commit -q -m "initial")
+
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_013" \
+    --output "$RUN_DIR_013" \
+    --skip-gate 1 --skip-gate 2 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || true
+
+python3 -c "
 import json, sys
+r = json.load(open('$RUN_DIR_013/enforcement_report.json'))
 
-state_file, finding_id, max_attempts = sys.argv[1:4]
+# Top-level keys
+required_top = ['stage', 'timestamp', 'overall_result', 'gates']
+missing_top = [k for k in required_top if k not in r]
+if missing_top:
+    print(f'Missing top-level keys: {missing_top}', file=sys.stderr)
+    sys.exit(1)
 
-with open(state_file) as f:
-    state = json.load(f)
+# Gate entry keys
+required_gate = ['gate', 'name', 'result', 'duration_seconds', 'details']
+for g in r['gates']:
+    missing_gate = [k for k in required_gate if k not in g]
+    if missing_gate:
+        print(f'Gate {g.get(\"gate\",\"?\")} missing keys: {missing_gate}', file=sys.stderr)
+        sys.exit(1)
 
-lines = [
-    f"## Pipeline Failure Report",
-    f"",
-    f"**Finding:** `{finding_id}`",
-    f"**Attempts:** {max_attempts} (all exhausted)",
-    f"**Branch:** `pipeline/improvement-{finding_id}`",
-    f"",
-    f"## Attempt History",
-    f"",
-    f"| Attempt | Failed Stage | Gate | Reason |",
-    f"|---------|-------------|------|--------|",
-]
+# Validate types
+assert isinstance(r['overall_result'], str), 'overall_result not string'
+assert r['overall_result'] in ('PASS', 'FAIL'), f'overall_result not PASS/FAIL: {r[\"overall_result\"]}'
+assert isinstance(r['gates'], list), 'gates not list'
+assert len(r['gates']) == 6, f'expected 6 gates, got {len(r[\"gates\"])}'
+" && pass "Report schema has all required keys and valid types" || fail "Report schema validation failed"
 
-for a in state.get("attempts", []):
-    attempt = a["attempt"]
-    stage = a["failed_stage"]
-    gate = a.get("failed_gate", "---")
-    reason = a["failure_reason"][:80]
-    lines.append(f"| {attempt} | {stage} | {gate} | {reason} |")
+rm -rf "$TMPDIR_013"
 
-lines.extend([
-    f"",
-    f"## Action Required",
-    f"This finding requires manual investigation.",
-])
+# ---------------------------------------------------------------------------
+# IT-014: Overall FAIL when any gate fails
+# ---------------------------------------------------------------------------
 
-print("\n".join(lines))
-PYEOF
-    )
+run_test "IT-014: Overall result is FAIL when any gate fails"
 
-    # Validate issue body structure
-    local has_finding=false has_attempts=false has_gates=false
-    echo "$issue_body" | grep -q "tv-fail" && has_finding=true
-    echo "$issue_body" | grep -q "Attempt History" && has_attempts=true
-    echo "$issue_body" | grep -q "stage_6" && has_gates=true
+TMPDIR_014=$(mktemp -d)
+BUILDER_014="$TMPDIR_014/builder"
+RUN_DIR_014="$TMPDIR_014/runs/test"
+PATTERNS_014="$TMPDIR_014/patterns.txt"
 
-    if [[ "$has_finding" == "true" && "$has_attempts" == "true" && "$has_gates" == "true" ]]; then
-        pass_test "Issue body has finding, attempt history, and stage details"
-    else
-        fail_test "Issue content" "Missing finding=$has_finding attempts=$has_attempts gates=$has_gates"
-    fi
+make_builder_dir "$BUILDER_014"
+mkdir -p "$RUN_DIR_014"
+make_builder_makefile "$BUILDER_014"
+make_patterns_file "$PATTERNS_014"
 
-    rm -rf "$tmpdir"
+# Swift file with a violation
+cat > "$BUILDER_014/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Bad.swift" <<'SWIFT'
+// FIXME: this is bad
+public struct Bad {}
+SWIFT
+(cd "$BUILDER_014" && git add -A && git commit -q -m "initial")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_014" \
+    --output "$RUN_DIR_014" \
+    --patterns "$PATTERNS_014" \
+    --skip-gate 2 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+OVERALL=$(python3 -c "import json; print(json.load(open('$RUN_DIR_014/enforcement_report.json'))['overall_result'])")
+if [[ "$OVERALL" == "FAIL" ]]; then
+    pass "Overall result is FAIL when Gate 1 fails"
+else
+    fail "Expected overall FAIL, got $OVERALL"
+fi
+
+if [[ "$EXIT_CODE" -ne 0 ]]; then
+    pass "Script exit code non-zero on overall FAIL"
+else
+    fail "Expected non-zero exit code on FAIL"
+fi
+
+rm -rf "$TMPDIR_014"
+
+# ---------------------------------------------------------------------------
+# IT-015: Overall PASS when all gates pass
+# ---------------------------------------------------------------------------
+
+run_test "IT-015: Overall result is PASS when all gates pass"
+
+TMPDIR_015=$(mktemp -d)
+BUILDER_015="$TMPDIR_015/builder"
+RUN_DIR_015="$TMPDIR_015/runs/test"
+PATTERNS_015="$TMPDIR_015/patterns.txt"
+
+make_builder_dir "$BUILDER_015"
+mkdir -p "$RUN_DIR_015"
+make_builder_makefile "$BUILDER_015"
+make_patterns_file "$PATTERNS_015"
+
+# Clean Swift file
+cat > "$BUILDER_015/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Clean.swift" <<'SWIFT'
+public struct Clean {
+    public let value: Int
 }
+SWIFT
+(cd "$BUILDER_015" && git add -A && git commit -q -m "initial")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_015" \
+    --output "$RUN_DIR_015" \
+    --patterns "$PATTERNS_015" \
+    --skip-gate 4 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+OVERALL=$(python3 -c "import json; print(json.load(open('$RUN_DIR_015/enforcement_report.json'))['overall_result'])")
+if [[ "$OVERALL" == "PASS" ]]; then
+    pass "Overall result is PASS when gates 1-3 pass"
+else
+    fail "Expected overall PASS, got $OVERALL"
+fi
+
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+    pass "Script exit code 0 on overall PASS"
+else
+    fail "Expected exit code 0 on PASS, got $EXIT_CODE"
+fi
+
+rm -rf "$TMPDIR_015"
 
 # ---------------------------------------------------------------------------
-# Run all tests
+# IT-016: Structured Log Output
 # ---------------------------------------------------------------------------
 
-echo "=== Stage 10 Integration Tests ==="
-echo ""
+run_test "IT-016: Structured JSON log output"
 
-test_pr_created
-test_pr_labels
-test_sync_staging
-test_pr_description_metadata
-test_issue_labels
-test_issue_content
+TMPDIR_016=$(mktemp -d)
+BUILDER_016="$TMPDIR_016/builder"
+RUN_DIR_016="$TMPDIR_016/runs/test"
+
+make_builder_dir "$BUILDER_016"
+mkdir -p "$RUN_DIR_016"
+make_builder_makefile "$BUILDER_016"
+
+cat > "$BUILDER_016/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/File.swift" <<'SWIFT'
+public struct File {}
+SWIFT
+(cd "$BUILDER_016" && git add -A && git commit -q -m "initial")
+
+LOG_OUTPUT=$("$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_016" \
+    --output "$RUN_DIR_016" \
+    --skip-gate 1 --skip-gate 2 --skip-gate 3 --skip-gate 4 --skip-gate 5 --skip-gate 6 2>&1)
+
+# Check that log lines contain stage field
+STAGE_LINES=$(echo "$LOG_OUTPUT" | grep '"stage"' | head -1)
+if [[ -n "$STAGE_LINES" ]]; then
+    pass "Log output contains stage field"
+else
+    fail "Log output missing stage field"
+fi
+
+# Check timestamp field
+TIMESTAMP_LINES=$(echo "$LOG_OUTPUT" | grep '"timestamp"' | head -1)
+if [[ -n "$TIMESTAMP_LINES" ]]; then
+    pass "Log output contains timestamp field"
+else
+    fail "Log output missing timestamp field"
+fi
+
+# Check overall_result in log
+RESULT_LOG=$(echo "$LOG_OUTPUT" | grep 'overall result')
+if [[ -n "$RESULT_LOG" ]]; then
+    pass "Log output contains overall result"
+else
+    fail "Log output missing overall result"
+fi
+
+# Verify structured log lines are valid JSON
+VALID_JSON=true
+while IFS= read -r line; do
+    if echo "$line" | grep -q '^{'; then
+        python3 -c "import json; json.loads('''$line''')" 2>/dev/null || VALID_JSON=false
+    fi
+done <<< "$LOG_OUTPUT"
+
+if [[ "$VALID_JSON" == "true" ]]; then
+    pass "All structured log lines are valid JSON"
+else
+    fail "Some log lines are not valid JSON"
+fi
+
+rm -rf "$TMPDIR_016"
+
+# ---------------------------------------------------------------------------
+# IT-017: Gates 4-6 with stub Makefile (pass)
+# ---------------------------------------------------------------------------
+
+run_test "IT-017: Gates 4-6 pass with working builder Makefile"
+
+TMPDIR_017=$(mktemp -d)
+BUILDER_017="$TMPDIR_017/builder"
+RUN_DIR_017="$TMPDIR_017/runs/test"
+
+make_builder_dir "$BUILDER_017"
+mkdir -p "$RUN_DIR_017"
+make_builder_makefile "$BUILDER_017" 0 0 0  # all succeed
+
+cat > "$BUILDER_017/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/File.swift" <<'SWIFT'
+public struct File {}
+SWIFT
+(cd "$BUILDER_017" && git add -A && git commit -q -m "initial")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_017" \
+    --output "$RUN_DIR_017" \
+    --skip-gate 1 --skip-gate 2 --skip-gate 3 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ "$EXIT_CODE" -eq 0 ]]; then
+    pass "Exit code 0 when gates 4-6 succeed"
+else
+    fail "Expected exit code 0, got $EXIT_CODE"
+fi
+
+# Check each gate result
+for gate_num in 4 5 6; do
+    GATE_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_017/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==$gate_num][0]; print(g['result'])")
+    if [[ "$GATE_RESULT" == "PASS" ]]; then
+        pass "Gate $gate_num result is PASS"
+    else
+        fail "Expected Gate $gate_num PASS, got $GATE_RESULT"
+    fi
+done
+
+rm -rf "$TMPDIR_017"
+
+# ---------------------------------------------------------------------------
+# IT-018: Gate 4 failure propagates
+# ---------------------------------------------------------------------------
+
+run_test "IT-018: Gate 4 build failure propagates to overall FAIL"
+
+TMPDIR_018=$(mktemp -d)
+BUILDER_018="$TMPDIR_018/builder"
+RUN_DIR_018="$TMPDIR_018/runs/test"
+
+make_builder_dir "$BUILDER_018"
+mkdir -p "$RUN_DIR_018"
+make_builder_makefile "$BUILDER_018" 1 0 0  # build fails
+
+cat > "$BUILDER_018/packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/File.swift" <<'SWIFT'
+public struct File {}
+SWIFT
+(cd "$BUILDER_018" && git add -A && git commit -q -m "initial")
+
+EXIT_CODE=0
+"$STAGE10_SCRIPT" \
+    --builder-dir "$BUILDER_018" \
+    --output "$RUN_DIR_018" \
+    --skip-gate 1 --skip-gate 2 --skip-gate 3 --skip-gate 5 --skip-gate 6 > /dev/null 2>&1 || EXIT_CODE=$?
+
+if [[ "$EXIT_CODE" -ne 0 ]]; then
+    pass "Exit code non-zero when build fails"
+else
+    fail "Expected non-zero exit code when build fails"
+fi
+
+GATE4_RESULT=$(python3 -c "import json; r=json.load(open('$RUN_DIR_018/enforcement_report.json')); g=[x for x in r['gates'] if x['gate']==4][0]; print(g['result'])")
+if [[ "$GATE4_RESULT" == "FAIL" ]]; then
+    pass "Gate 4 result is FAIL when build fails"
+else
+    fail "Expected Gate 4 FAIL, got $GATE4_RESULT"
+fi
+
+rm -rf "$TMPDIR_018"
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 
 echo ""
-echo "=== Results: $TESTS_PASSED/$TESTS_RUN passed ==="
+echo "============================================"
+echo "Stage 10 Integration Tests: $TESTS_RUN run, $TESTS_PASSED passed, $TESTS_FAILED failed"
+echo "============================================"
 
 if [[ "$TESTS_FAILED" -gt 0 ]]; then
     exit 1

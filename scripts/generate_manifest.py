@@ -3,7 +3,7 @@
 Manifest Generator (PIPE-E2-005)
 
 Converts validated integration plans into the exact format consumed by
-Stage 6 Gate 2 (manifest compliance check in stage6-gates.sh).
+Stage 10 Gate 2 (manifest compliance check in stage10-gates.sh).
 
 Produces:
   - must_change: files from plan's modify-action entries

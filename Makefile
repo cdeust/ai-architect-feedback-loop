@@ -4,9 +4,9 @@
 #
 # Full pipeline:    make pipeline-run | make pipeline-health-check
 # Pipeline stages:  make pipeline-stage1 | make pipeline-prioritize | make pipeline-stage2 | make pipeline-stage3
-#                   make pipeline-stage4 | make pipeline-stage5
-#                   make pipeline-gates | make pipeline-stage7 | make pipeline-retry
-#                   make pipeline-benchmark | make pipeline-stage9 | make pipeline-stage10
+#                   make pipeline-stage5 | make pipeline-stage7
+#                   make pipeline-gates | make pipeline-stage11 | make pipeline-retry
+#                   make pipeline-benchmark | make pipeline-stage13 | make pipeline-stage14
 # Maintenance:      make update-engine-graph | make update-baselines | make pipeline-generate-baselines
 # Scheduler:        make install-scheduler | make uninstall-scheduler
 # Health:           make pipeline-health
@@ -95,11 +95,11 @@ pipeline-stage3: ## Run Stage 3: Integration design (Claude Code CLI)
 		--output $(RUNS_DIR)/$(RUN_TS) \
 		2>&1 | tee $(LOGS_DIR)/stage3-$(RUN_TS).log
 
-.PHONY: pipeline-stage4
-pipeline-stage4: ## Run Stage 4: PRD generation (dogfood via SKILL.md)
+.PHONY: pipeline-stage5
+pipeline-stage5: ## Run Stage 5: PRD generation (dogfood via SKILL.md)
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 4: PRD generation (dogfood)..."
-	@$(SCRIPTS_DIR)/stage4-prd-generation.sh \
+	@echo "Running Stage 5: PRD generation (dogfood)..."
+	@$(SCRIPTS_DIR)/stage5-prd-generation.sh \
 		--run-dir $(RUNS_DIR)/$(RUN_TS) \
 		--packages-dir $(PACKAGES_DIR) \
 		--builder-dir $(BUILDER_DIR) \
@@ -107,36 +107,36 @@ pipeline-stage4: ## Run Stage 4: PRD generation (dogfood via SKILL.md)
 		--category-map $(CONFIG_DIR)/category_engine_map.json \
 		--config $(CONFIG_DIR)/thresholds.json \
 		--output $(RUNS_DIR)/$(RUN_TS) \
-		2>&1 | tee $(LOGS_DIR)/stage4-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage5-$(RUN_TS).log
 
-.PHONY: pipeline-stage5
-pipeline-stage5: ## Run Stage 5: Implementation (Claude Code CLI on builder repo)
+.PHONY: pipeline-stage7
+pipeline-stage7: ## Run Stage 7: Implementation (Claude Code CLI on builder repo)
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 5: Implementation..."
-	@$(SCRIPTS_DIR)/stage5-implementation.sh \
+	@echo "Running Stage 7: Implementation..."
+	@$(SCRIPTS_DIR)/stage7-implementation.sh \
 		--run-dir $(RUNS_DIR)/$(RUN_TS) \
 		--builder-dir $(BUILDER_DIR) \
 		--engine-graph $(CONFIG_DIR)/engine_graph.json \
 		--config $(CONFIG_DIR)/thresholds.json \
 		--output $(RUNS_DIR)/$(RUN_TS) \
-		2>&1 | tee $(LOGS_DIR)/stage5-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage7-$(RUN_TS).log
 
 .PHONY: pipeline-gates
-pipeline-gates: ## Run Stage 6: Deterministic enforcement gates
+pipeline-gates: ## Run Stage 10: Deterministic enforcement gates
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 6: Deterministic enforcement gates..."
-	@$(SCRIPTS_DIR)/stage6-gates.sh \
+	@echo "Running Stage 10: Deterministic enforcement gates..."
+	@$(SCRIPTS_DIR)/stage10-gates.sh \
 		--builder-dir $(BUILDER_DIR) \
 		--config $(CONFIG_DIR)/thresholds.json \
 		--patterns $(CONFIG_DIR)/prohibited_patterns.txt \
 		--output $(RUNS_DIR)/$(RUN_TS) \
-		2>&1 | tee $(LOGS_DIR)/stage6-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage10-$(RUN_TS).log
 
-.PHONY: pipeline-stage7
-pipeline-stage7: ## Run Stage 7: Semantic verification (independent Claude session)
+.PHONY: pipeline-stage11
+pipeline-stage11: ## Run Stage 11: Semantic verification (independent Claude session)
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 7: Semantic verification..."
-	@$(SCRIPTS_DIR)/stage7-semantic-verification.sh \
+	@echo "Running Stage 11: Semantic verification..."
+	@$(SCRIPTS_DIR)/stage11-semantic-verification.sh \
 		--run-dir $(RUNS_DIR)/$(RUN_TS) \
 		--builder-dir $(BUILDER_DIR) \
 		--engine-graph $(CONFIG_DIR)/engine_graph.json \
@@ -145,10 +145,10 @@ pipeline-stage7: ## Run Stage 7: Semantic verification (independent Claude sessi
 		--finding-id $(FINDING_ID) \
 		--branch $(BRANCH) \
 		--output $(RUNS_DIR)/$(RUN_TS) \
-		2>&1 | tee $(LOGS_DIR)/stage7-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage11-$(RUN_TS).log
 
 .PHONY: pipeline-retry
-pipeline-retry: ## Run retry orchestrator (Stage 5→6→7 loop per finding)
+pipeline-retry: ## Run retry orchestrator (Stage 7→10→11 loop per finding)
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
 	@echo "Running retry orchestrator..."
 	@$(SCRIPTS_DIR)/retry_orchestrator.sh \
@@ -162,36 +162,36 @@ pipeline-retry: ## Run retry orchestrator (Stage 5→6→7 loop per finding)
 		2>&1 | tee $(LOGS_DIR)/retry-$(RUN_TS).log
 
 .PHONY: pipeline-benchmark
-pipeline-benchmark: ## Run Stage 8: Quality benchmark comparison
+pipeline-benchmark: ## Run Stage 12: Quality benchmark comparison
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 8: Quality benchmark comparison..."
-	@$(SCRIPTS_DIR)/stage8-benchmark.sh \
+	@echo "Running Stage 12: Quality benchmark comparison..."
+	@$(SCRIPTS_DIR)/stage12-benchmark.sh \
 		--config $(CONFIG_DIR)/thresholds.json \
 		--baselines $(BENCHMARKS_DIR)/baselines \
 		--output $(RUNS_DIR)/$(RUN_TS) \
-		2>&1 | tee $(LOGS_DIR)/stage8-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage12-$(RUN_TS).log
 
-.PHONY: pipeline-stage9
-pipeline-stage9: ## Run Stage 9: Deployment simulation (make distribute)
+.PHONY: pipeline-stage13
+pipeline-stage13: ## Run Stage 13: Deployment simulation (make distribute)
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 9: Deployment simulation..."
-	@$(SCRIPTS_DIR)/stage9-deployment.sh \
+	@echo "Running Stage 13: Deployment simulation..."
+	@$(SCRIPTS_DIR)/stage13-deployment.sh \
 		--builder-dir $(BUILDER_DIR) \
 		--output $(RUNS_DIR)/$(RUN_TS) \
-		2>&1 | tee $(LOGS_DIR)/stage9-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage13-$(RUN_TS).log
 
-.PHONY: pipeline-stage10
-pipeline-stage10: ## Run Stage 10: Pull request creation + staging sync
+.PHONY: pipeline-stage14
+pipeline-stage14: ## Run Stage 14: Pull request creation + staging sync
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 10: Pull request creation..."
-	@$(SCRIPTS_DIR)/stage10-pull-request.sh \
+	@echo "Running Stage 14: Pull request creation..."
+	@$(SCRIPTS_DIR)/stage14-pull-request.sh \
 		--run-dir $(RUNS_DIR)/$(RUN_TS) \
 		--builder-dir $(BUILDER_DIR) \
 		--engine-graph $(CONFIG_DIR)/engine_graph.json \
 		--finding-id $(FINDING_ID) \
 		--branch $(BRANCH) \
 		--output $(RUNS_DIR)/$(RUN_TS) \
-		2>&1 | tee $(LOGS_DIR)/stage10-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage14-$(RUN_TS).log
 
 # ============================================================================
 # Full Pipeline
@@ -251,13 +251,13 @@ update-baselines: ## Update benchmark baselines from latest successful run
 .PHONY: pipeline-generate-baselines
 pipeline-generate-baselines: ## Generate benchmark baselines via PRD generation (slow)
 	@mkdir -p $(RUNS_DIR)/$(RUN_TS) $(LOGS_DIR)
-	@echo "Running Stage 8: Generate benchmark baselines..."
-	@$(SCRIPTS_DIR)/stage8-benchmark.sh \
+	@echo "Running Stage 12: Generate benchmark baselines..."
+	@$(SCRIPTS_DIR)/stage12-benchmark.sh \
 		--config $(CONFIG_DIR)/thresholds.json \
 		--baselines $(BENCHMARKS_DIR)/baselines \
 		--output $(RUNS_DIR)/$(RUN_TS) \
 		--mode generate \
-		2>&1 | tee $(LOGS_DIR)/stage8-generate-$(RUN_TS).log
+		2>&1 | tee $(LOGS_DIR)/stage12-generate-$(RUN_TS).log
 
 # ============================================================================
 # Health / Validation
@@ -287,7 +287,7 @@ pipeline-health: ## Validate config files, scripts, and benchmarks
 		|| { echo "  engine_graph_overrides.json — INVALID"; exit 1; }
 	@echo ""
 	@echo "Scripts validation:"
-	@for script in stage2-impact-analysis.sh stage3-integration-design.sh stage4-prd-generation.sh stage5-implementation.sh stage6-gates.sh stage7-semantic-verification.sh retry_orchestrator.sh stage8-benchmark.sh stage9-deployment.sh stage10-pull-request.sh update-baselines.sh health_check.sh pipeline.sh notify.sh; do \
+	@for script in stage2-impact-analysis.sh stage3-integration-design.sh stage5-prd-generation.sh stage6-prd-review.sh stage7-implementation.sh stage7-worker.sh stage7-reviewer.sh stage10-gates.sh stage11-semantic-verification.sh retry_orchestrator.sh stage12-benchmark.sh stage13-deployment.sh stage14-pull-request.sh update-baselines.sh health_check.sh pipeline.sh notify.sh; do \
 		if [ -x "$(SCRIPTS_DIR)/$$script" ]; then \
 			echo "  $$script — executable"; \
 		else \
@@ -295,7 +295,7 @@ pipeline-health: ## Validate config files, scripts, and benchmarks
 			exit 1; \
 		fi; \
 	done
-	@for pyfile in extract_prd_metrics.py prioritize_findings.py extract_contracts.py validate_impact_report.py validate_integration_plan.py generate_manifest.py compose_prd_input.py validate_prd_output.py compose_pr.py compose_improvement_report.py load_project_config.py; do \
+	@for pyfile in extract_prd_metrics.py prioritize_findings.py extract_contracts.py validate_impact_report.py validate_integration_plan.py generate_manifest.py compose_prd_input.py validate_prd_output.py compose_pr.py compose_improvement_report.py load_project_config.py decompose_work_units.py progress.py license.py; do \
 		if [ -f "$(SCRIPTS_DIR)/$$pyfile" ]; then \
 			echo "  $$pyfile — exists"; \
 		else \
@@ -305,7 +305,7 @@ pipeline-health: ## Validate config files, scripts, and benchmarks
 	done
 	@echo ""
 	@echo "Prompt templates:"
-	@for tmpl in impact_analysis.md integration_design.md prd_generation.md implementation.md semantic_verification.md; do \
+	@for tmpl in impact_analysis.md integration_design.md prd_generation.md prd_review.md implementation.md semantic_verification.md worker.md reviewer.md; do \
 		if [ -f "prompts/$$tmpl" ]; then \
 			echo "  $$tmpl — exists"; \
 		else \
@@ -365,10 +365,22 @@ $(CONFIG_DIR)/.config_resolved: $(CONFIG_DIR)/pipeline.yml
 pipeline-run: $(CONFIG_DIR)/.config_resolved
 pipeline-stage1: $(CONFIG_DIR)/.config_resolved
 pipeline-stage2: $(CONFIG_DIR)/.config_resolved
-pipeline-stage5: $(CONFIG_DIR)/.config_resolved
-pipeline-stage10: $(CONFIG_DIR)/.config_resolved
+pipeline-stage7: $(CONFIG_DIR)/.config_resolved
+pipeline-stage14: $(CONFIG_DIR)/.config_resolved
 pipeline-health: $(CONFIG_DIR)/.config_resolved
 endif
+
+# ============================================================================
+# Progress
+# ============================================================================
+
+.PHONY: pipeline-progress
+pipeline-progress: ## Show live pipeline progress for the latest run
+	@python3 $(SCRIPTS_DIR)/progress.py --run-dir $$(ls -td $(RUNS_DIR)/*/ 2>/dev/null | head -1 || echo "$(RUNS_DIR)/LATEST") --watch
+
+.PHONY: pipeline-status
+pipeline-status: ## Show pipeline progress snapshot (no refresh)
+	@python3 $(SCRIPTS_DIR)/progress.py --run-dir $$(ls -td $(RUNS_DIR)/*/ 2>/dev/null | head -1 || echo "$(RUNS_DIR)/LATEST")
 
 # ============================================================================
 # Cleanup

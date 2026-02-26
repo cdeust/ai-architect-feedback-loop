@@ -1,4 +1,4 @@
-# Stage 4: PRD Generation (Non-Interactive Pipeline Mode)
+# Stage 5: PRD Generation (Non-Interactive Pipeline Mode)
 
 ## Your Role
 You are generating a production-ready PRD for a code improvement. This runs

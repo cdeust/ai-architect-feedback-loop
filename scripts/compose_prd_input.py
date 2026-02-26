@@ -306,21 +306,40 @@ def main(argv=None):
 
     if args.batch_dir:
         # Batch mode: process all accepted findings
+        # Scan both new layout (findings/$FID/) and old flat layout
         batch_dir = args.batch_dir
         count = 0
 
+        # Collect accepted finding IDs from both layouts
+        _accepted_fids = {}
+        findings_dir = os.path.join(batch_dir, "findings")
+        if os.path.isdir(findings_dir):
+            for fid in sorted(os.listdir(findings_dir)):
+                vpath = os.path.join(findings_dir, fid, "stage3-validation.json")
+                if os.path.isfile(vpath):
+                    validation = load_json(vpath)
+                    if validation.get("result") == "ACCEPTED":
+                        _accepted_fids[fid] = True
         for fname in sorted(os.listdir(batch_dir)):
             if not fname.startswith("validation_stage3_") or not fname.endswith(".json"):
                 continue
             validation = load_json(os.path.join(batch_dir, fname))
-            if validation.get("result") != "ACCEPTED":
-                continue
+            if validation.get("result") == "ACCEPTED":
+                fid = validation.get("finding_id", "unknown")
+                _accepted_fids[fid] = True
 
-            finding_id = validation.get("finding_id", "unknown")
-
-            impact_path = os.path.join(batch_dir, f"impact_report_{finding_id}.json")
-            plan_path = os.path.join(batch_dir, f"integration_plan_{finding_id}.json")
-            manifest_path = os.path.join(batch_dir, f"manifest_{finding_id}.json")
+        for finding_id in sorted(_accepted_fids.keys()):
+            # Resolve paths: new layout first, then old flat
+            fid_dir = os.path.join(batch_dir, "findings", finding_id)
+            impact_path = os.path.join(fid_dir, "stage2-impact.json")
+            if not os.path.isfile(impact_path):
+                impact_path = os.path.join(batch_dir, f"impact_report_{finding_id}.json")
+            plan_path = os.path.join(fid_dir, "stage3-integration.json")
+            if not os.path.isfile(plan_path):
+                plan_path = os.path.join(batch_dir, f"integration_plan_{finding_id}.json")
+            manifest_path = os.path.join(fid_dir, "stage3-manifest.json")
+            if not os.path.isfile(manifest_path):
+                manifest_path = os.path.join(batch_dir, f"manifest_{finding_id}.json")
             contracts_path = os.path.join(batch_dir, f"contracts_{finding_id}.md")
 
             if not os.path.isfile(impact_path):

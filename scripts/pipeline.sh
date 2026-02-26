@@ -13,10 +13,10 @@ set -euo pipefail
 #   1. Pre-flight    — health_check.sh
 #   2. Discovery     — stage1 + prioritize
 #   3. Architecture  — stage2 (impact) + stage3 (integration design)
-#   4. PRD Gen       — stage4 (dogfood)
-#   5. Implement     — retry_orchestrator per finding (stage5→6→7)
-#   6. Quality       — stage8 (benchmark) + stage9 (deployment)
-#   7. Delivery      — stage10 (PRs)
+#   4. PRD Gen       — stage5 (PRD generation) + stage6 (PRD review)
+#   5. Implement     — retry_orchestrator per finding (stage7→10→11)
+#   6. Quality       — stage12 (benchmark) + stage13 (deployment)
+#   7. Delivery      — stage14 (PRs)
 #   8. Report        — compose_improvement_report.py + notify.sh
 #
 # Usage:
@@ -81,10 +81,21 @@ PREFS_FILE="${CONFIG_DIR}/pipeline_preferences.json"
 if [[ -f "$PREFS_FILE" ]]; then
     TOP_N=$(python3 -c "import json; print(json.load(open('$PREFS_FILE'))['pipeline']['top_n_findings'])" 2>/dev/null || echo "20")
     EXCLUDE_CATS=$(python3 -c "import json; print(' '.join(json.load(open('$PREFS_FILE'))['pipeline']['exclude_categories']))" 2>/dev/null || echo "benchmarks")
+    LICENSE_KEY_FILE=$(python3 -c "import json; print(json.load(open('$PREFS_FILE'))['license']['key_file'])" 2>/dev/null || echo "~/.aiprd/license-key")
 else
     TOP_N=20
     EXCLUDE_CATS="benchmarks"
+    LICENSE_KEY_FILE="~/.aiprd/license-key"
 fi
+
+# ---------------------------------------------------------------------------
+# License tier detection (no key = free tier, not a failure)
+# ---------------------------------------------------------------------------
+
+LICENSE_TIER=$(python3 "$SCRIPTS_DIR/license.py" --check \
+    --key-file "$LICENSE_KEY_FILE" 2>/dev/null || echo "free")
+export PIPELINE_LICENSE_TIER="$LICENSE_TIER"
+log "INFO" "License tier: $LICENSE_TIER"
 
 # ---------------------------------------------------------------------------
 # Run directory + log setup
@@ -162,6 +173,12 @@ with open('$RUN_DIR/pipeline_summary.json', 'w') as f:
     log "INFO" "Pipeline summary written"
 }
 
+# Progress event helper — writes to progress.jsonl
+emit_progress() {
+    local fid="$1" stage="$2" status="$3"
+    echo "{\"fid\":\"$fid\",\"stage\":$stage,\"status\":\"$status\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >> "$RUN_DIR/progress.jsonl"
+}
+
 log "INFO" "Pipeline started — run: $RUN_TS, builder: $BUILDER_DIR"
 
 # ─── PHASE 1: Pre-flight ──────────────────────────────────────────────────
@@ -234,10 +251,10 @@ run_stage "stage3_integration_design" \
         --output "$RUN_DIR" \
     || { log "ERROR" "Integration design failed"; handle_fatal_failure; }
 
-# ─── PHASE 4: PRD Generation (dogfood) ────────────────────────────────────
+# ─── PHASE 4: PRD Generation + Review ─────────────────────────────────────
 
-run_stage "stage4_prd_generation" \
-    "$SCRIPTS_DIR/stage4-prd-generation.sh" \
+run_stage "stage5_prd_generation" \
+    "$SCRIPTS_DIR/stage5-prd-generation.sh" \
         --run-dir "$RUN_DIR" \
         --packages-dir "$PACKAGES_DIR" \
         --builder-dir "$BUILDER_DIR" \
@@ -247,15 +264,41 @@ run_stage "stage4_prd_generation" \
         --output "$RUN_DIR" \
     || { log "ERROR" "PRD generation failed"; handle_fatal_failure; }
 
+run_stage "stage6_prd_review" \
+    "$SCRIPTS_DIR/stage6-prd-review.sh" \
+        --run-dir "$RUN_DIR" \
+        --engine-graph "$CONFIG_DIR/engine_graph.json" \
+        --config "$CONFIG_DIR/thresholds.json" \
+        --output "$RUN_DIR" \
+    || { log "ERROR" "PRD review failed"; handle_fatal_failure; }
+
 # ─── PHASE 5: Implementation + Verification (per-finding) ─────────────────
 
-# Find which findings made it through Stages 2-4
+# Find which findings made it through Stages 2-5
+# Scan new layout (findings/$FID/stage5-validation.json) and old layouts
 ACCEPTED_FIDS=()
+_scan_pipeline_s5=()
+for vf in "$RUN_DIR"/findings/*/stage5-validation.json; do
+    [[ -f "$vf" ]] && _scan_pipeline_s5+=("$vf")
+done
+for vf in "$RUN_DIR"/findings/*/stage4-validation.json; do
+    [[ -f "$vf" ]] && _scan_pipeline_s5+=("$vf")
+done
 for vf in "$RUN_DIR"/validation_stage4_*.json; do
+    [[ -f "$vf" ]] && _scan_pipeline_s5+=("$vf")
+done
+for vf in "${_scan_pipeline_s5[@]+"${_scan_pipeline_s5[@]}"}"; do
     [[ -f "$vf" ]] || continue
     result=$(python3 -c "import json; d=json.load(open('$vf')); print(d.get('result',''))" 2>/dev/null || echo "")
     fid=$(python3 -c "import json; d=json.load(open('$vf')); print(d.get('finding_id',''))" 2>/dev/null || echo "")
-    [[ "$result" == "ACCEPTED" && -n "$fid" ]] && ACCEPTED_FIDS+=("$fid")
+    if [[ "$result" == "ACCEPTED" && -n "$fid" ]]; then
+        # Avoid duplicates
+        local _dup=false
+        for _e in "${ACCEPTED_FIDS[@]+"${ACCEPTED_FIDS[@]}"}"; do
+            [[ "$_e" == "$fid" ]] && _dup=true && break
+        done
+        [[ "$_dup" == "false" ]] && ACCEPTED_FIDS+=("$fid")
+    fi
 done
 
 log "INFO" "${#ACCEPTED_FIDS[@]} findings accepted for implementation"
@@ -265,6 +308,7 @@ FAILED_FIDS=()
 
 for FID in "${ACCEPTED_FIDS[@]}"; do
     log "INFO" "Implementing improvement: $FID"
+    emit_progress "$FID" 7 "start"
     FINDING_START=$(date +%s)
 
     retry_exit=0
@@ -282,9 +326,11 @@ for FID in "${ACCEPTED_FIDS[@]}"; do
 
     if [[ "$retry_exit" -eq 0 ]]; then
         SUCCESS_FIDS+=("$FID")
+        emit_progress "$FID" 99 "accepted"
         log "INFO" "Finding $FID: ACCEPTED in ${FINDING_DURATION}s"
     else
         FAILED_FIDS+=("$FID")
+        emit_progress "$FID" -1 "failed"
         log "WARN" "Finding $FID: FAILED after ${FINDING_DURATION}s"
     fi
 
@@ -296,15 +342,15 @@ done
 
 if [[ ${#SUCCESS_FIDS[@]} -gt 0 ]]; then
 
-    run_stage "stage8_benchmark" \
-        "$SCRIPTS_DIR/stage8-benchmark.sh" \
+    run_stage "stage12_benchmark" \
+        "$SCRIPTS_DIR/stage12-benchmark.sh" \
             --config "$CONFIG_DIR/thresholds.json" \
             --baselines "$REPO_DIR/benchmarks/baselines" \
             --output "$RUN_DIR" \
         || log "WARN" "Benchmark regression detected — PRs still created for review"
 
-    run_stage "stage9_deployment" \
-        "$SCRIPTS_DIR/stage9-deployment.sh" \
+    run_stage "stage13_deployment" \
+        "$SCRIPTS_DIR/stage13-deployment.sh" \
             --builder-dir "$BUILDER_DIR" \
             --output "$RUN_DIR" \
         || log "WARN" "Deployment simulation failed — PRs created but need review"
@@ -319,8 +365,8 @@ for FID in "${SUCCESS_FIDS[@]}"; do
     else
         BRANCH="pipeline/improvement-${FID}"
     fi
-    run_stage "stage10_pr_$FID" \
-        "$SCRIPTS_DIR/stage10-pull-request.sh" \
+    run_stage "stage14_pr_$FID" \
+        "$SCRIPTS_DIR/stage14-pull-request.sh" \
             --run-dir "$RUN_DIR" \
             --builder-dir "$BUILDER_DIR" \
             --engine-graph "$CONFIG_DIR/engine_graph.json" \

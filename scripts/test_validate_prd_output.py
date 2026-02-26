@@ -49,7 +49,7 @@ INTEGRATION_PLAN = {
 }
 
 CONFIG = {
-    "stage_4": {"prd_quality_minimum": 0.85}
+    "stage_5": {"prd_quality_minimum": 0.85}
 }
 
 VALID_PRD = """# Feature PRD: Upgrade tv-001

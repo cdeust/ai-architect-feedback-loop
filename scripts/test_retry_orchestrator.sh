@@ -94,7 +94,7 @@ EOF
     # Config with max_attempts
     cat > "$tmpdir/config.json" <<'EOF'
 {
-  "stage_4": {"prd_quality_minimum": 0.85},
+  "stage_5": {"prd_quality_minimum": 0.85},
   "retry": {"max_attempts": 3}
 }
 EOF
@@ -106,7 +106,7 @@ FIXME
 EOF
 
     # Validation file (accepted)
-    cat > "$tmpdir/run_dir/validation_stage4_tv-retry.json" <<'EOF'
+    cat > "$tmpdir/run_dir/validation_stage5_tv-retry.json" <<'EOF'
 {
   "stage": "validate_prd_output",
   "finding_id": "tv-retry",
@@ -156,7 +156,7 @@ create_mock_scripts() {
     mkdir -p "$mock_scripts_dir"
 
     # Mock Stage 5 — always succeeds (creates branch, makes commit)
-    cat > "$mock_scripts_dir/stage5-implementation.sh" <<S5EOF
+    cat > "$mock_scripts_dir/stage7-implementation.sh" <<S5EOF
 #!/usr/bin/env bash
 set -euo pipefail
 FID="" BD="" OD=""
@@ -178,16 +178,16 @@ git -C "\$BD" checkout "$BASE_BRANCH" > /dev/null 2>&1
 mkdir -p "\$OD"
 python3 -c "
 import json
-json.dump({'stage':'implementation','findings_processed':1,'accepted':1,'rejected':0,'failed':0,'reports':[{'finding_id':'\$FID','result':'ACCEPTED'}]},open('\$OD/stage5_summary.json','w'),indent=2)
+json.dump({'stage':'implementation','findings_processed':1,'accepted':1,'rejected':0,'failed':0,'reports':[{'finding_id':'\$FID','result':'ACCEPTED'}]},open('\$OD/stage7_summary.json','w'),indent=2)
 "
 S5EOF
-    chmod +x "$mock_scripts_dir/stage5-implementation.sh"
+    chmod +x "$mock_scripts_dir/stage7-implementation.sh"
 
     # Mock Stage 6 — configurable behavior (uses counter file)
     local s6_call_count_file="$mock_scripts_dir/.s6_call_count"
     echo "0" > "$s6_call_count_file"
 
-    cat > "$mock_scripts_dir/stage6-gates.sh" <<S6EOF
+    cat > "$mock_scripts_dir/stage10-gates.sh" <<S6EOF
 #!/usr/bin/env bash
 set -euo pipefail
 OD=""
@@ -208,11 +208,11 @@ else
     exit 0
 fi
 S6EOF
-    chmod +x "$mock_scripts_dir/stage6-gates.sh"
+    chmod +x "$mock_scripts_dir/stage10-gates.sh"
 
     # Mock Stage 7 — configurable behavior
     if [[ "$s7_behavior" == "always_pass" ]]; then
-        cat > "$mock_scripts_dir/stage7-semantic-verification.sh" <<'S7EOF'
+        cat > "$mock_scripts_dir/stage11-semantic-verification.sh" <<'S7EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 OD="" FID=""
@@ -222,12 +222,12 @@ done
 mkdir -p "$OD"
 python3 -c "
 import json
-json.dump({'stage':'semantic_verification','finding_id':'$FID','overall_result':'PASS','confidence':0.87,'prd_alignment_score':0.92,'findings':[],'cross_engine_verification':{'touchpoints_verified':1,'touchpoints_total':1,'result':'PASS'},'anti_patterns_detected':[],'requirements_traced':{'total':1,'matched':1,'missing':[]}},open('$OD/verification_stage7_${FID}.json','w'),indent=2)
+json.dump({'stage':'semantic_verification','finding_id':'$FID','overall_result':'PASS','confidence':0.87,'prd_alignment_score':0.92,'findings':[],'cross_engine_verification':{'touchpoints_verified':1,'touchpoints_total':1,'result':'PASS'},'anti_patterns_detected':[],'requirements_traced':{'total':1,'matched':1,'missing':[]}},open('$OD/verification_stage11_${FID}.json','w'),indent=2)
 "
 exit 0
 S7EOF
     else
-        cat > "$mock_scripts_dir/stage7-semantic-verification.sh" <<'S7EOF'
+        cat > "$mock_scripts_dir/stage11-semantic-verification.sh" <<'S7EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 OD="" FID=""
@@ -237,12 +237,12 @@ done
 mkdir -p "$OD"
 python3 -c "
 import json
-json.dump({'stage':'semantic_verification','finding_id':'$FID','overall_result':'FAIL','confidence':0.30,'prd_alignment_score':0.50,'findings':[{'severity':'CRITICAL','category':'alignment','description':'Missing FR','evidence':'test'}],'cross_engine_verification':{'touchpoints_verified':0,'touchpoints_total':1,'result':'FAIL'},'anti_patterns_detected':[],'requirements_traced':{'total':1,'matched':0,'missing':['FR-TV001-1']}},open('$OD/verification_stage7_${FID}.json','w'),indent=2)
+json.dump({'stage':'semantic_verification','finding_id':'$FID','overall_result':'FAIL','confidence':0.30,'prd_alignment_score':0.50,'findings':[{'severity':'CRITICAL','category':'alignment','description':'Missing FR','evidence':'test'}],'cross_engine_verification':{'touchpoints_verified':0,'touchpoints_total':1,'result':'FAIL'},'anti_patterns_detected':[],'requirements_traced':{'total':1,'matched':0,'missing':['FR-TV001-1']}},open('$OD/verification_stage11_${FID}.json','w'),indent=2)
 "
 exit 1
 S7EOF
     fi
-    chmod +x "$mock_scripts_dir/stage7-semantic-verification.sh"
+    chmod +x "$mock_scripts_dir/stage11-semantic-verification.sh"
 
     # Mock gh CLI
     local gh_log="$mock_scripts_dir/.gh_log"

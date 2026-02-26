@@ -2,15 +2,15 @@
 set -euo pipefail
 
 # ============================================================================
-# stage7-semantic-verification.sh — Stage 7: Independent Semantic Verification
+# stage11-semantic-verification.sh — Stage 11: Independent Semantic Verification
 # ============================================================================
 #
 # Runs an independent Claude Code CLI session to verify that the implementation
-# (Stage 5) matches the PRD specification. Intentionally separate from the
+# (Stage 7) matches the PRD specification. Intentionally separate from the
 # implementation session to prevent self-confirming bias.
 #
 # Usage:
-#   scripts/stage7-semantic-verification.sh \
+#   scripts/stage11-semantic-verification.sh \
 #       --run-dir runs/TIMESTAMP \
 #       --builder-dir /path/to/target-product \
 #       --engine-graph config/engine_graph.json \
@@ -23,7 +23,7 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STAGE_NAME="stage7_semantic_verification"
+STAGE_NAME="stage11_semantic_verification"
 
 # Resolve base branch from project config
 BASE_BRANCH="main"
@@ -60,6 +60,9 @@ run_with_timeout() {
 
 # Source shared AI invocation helper
 source "$SCRIPT_DIR/ai_invoke.sh"
+
+# Source artifact path helpers
+source "$SCRIPT_DIR/artifact_paths.sh"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -143,7 +146,7 @@ if ! command -v claude &> /dev/null; then
     exit 1
 fi
 
-# Resolve paths to absolute (Stage 7 cd's to BUILDER_DIR)
+# Resolve paths to absolute (Stage 11 cd's to BUILDER_DIR)
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
 OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" && pwd)/$(basename "$OUTPUT_DIR")"
 BUILDER_DIR="$(cd "$BUILDER_DIR" && pwd)"
@@ -171,7 +174,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-log "INFO" "Stage 7 started — Semantic Verification"
+log "INFO" "Stage 11 started — Semantic Verification"
 log "INFO" "Finding: $FINDING_ID, Branch: $BRANCH"
 
 # ---------------------------------------------------------------------------
@@ -188,10 +191,10 @@ fi
 log "INFO" "Git diff generated ($(echo "$GIT_DIFF" | wc -l | tr -d ' ') lines)"
 
 # ---------------------------------------------------------------------------
-# Read PRD from Stage 4 output
+# Read PRD from Stage 5 output
 # ---------------------------------------------------------------------------
 
-PRD_PATH="$RUN_DIR/prd_output_${FINDING_ID}/prd.md"
+PRD_PATH="$(artifact_prd_dir "$RUN_DIR" "$FINDING_ID")/prd.md"
 if [[ ! -f "$PRD_PATH" ]]; then
     log "ERROR" "PRD not found: $PRD_PATH"
     exit 1
@@ -202,7 +205,7 @@ PRD_CONTENT=$(cat "$PRD_PATH")
 # Read integration plan
 # ---------------------------------------------------------------------------
 
-INTEGRATION_PLAN_PATH="$RUN_DIR/integration_plan_${FINDING_ID}.json"
+INTEGRATION_PLAN_PATH=$(artifact_integration "$RUN_DIR" "$FINDING_ID")
 INTEGRATION_PLAN=""
 CROSS_ENGINE_TOUCHPOINTS=""
 
@@ -305,7 +308,7 @@ RAW_OUTPUT="$TMP_DIR/raw_verification.txt"
 CLAUDE_EXIT=0
 
 cd "$BUILDER_DIR"
-ai_invoke "$TMP_DIR/prompt.md" "$RAW_OUTPUT" "stage7" "$FINDING_ID" \
+ai_invoke "$TMP_DIR/prompt.md" "$RAW_OUTPUT" "stage11" "$FINDING_ID" \
     --max-turns 15 \
     || CLAUDE_EXIT=$?
 
@@ -330,7 +333,8 @@ result = {
     'anti_patterns_detected': [],
     'requirements_traced': {'total': 0, 'matched': 0, 'missing': []}
 }
-with open('$OUTPUT_DIR/verification_stage7_${FINDING_ID}.json', 'w') as f:
+VERIF_OUTPUT=$(artifact_verification11 "$OUTPUT_DIR" "$FINDING_ID")
+with open('$VERIF_OUTPUT', 'w') as f:
     json.dump(result, f, indent=2)
     f.write('\n')
 "
@@ -341,9 +345,10 @@ fi
 # Parse verification result JSON from Claude output
 # ---------------------------------------------------------------------------
 
+VERIF_OUTPUT=$(artifact_verification11 "$OUTPUT_DIR" "$FINDING_ID")
 log "INFO" "Parsing verification result..."
 
-python3 - "$RAW_OUTPUT" "$OUTPUT_DIR/verification_stage7_${FINDING_ID}.json" "$FINDING_ID" <<'PYEOF'
+python3 - "$RAW_OUTPUT" "$VERIF_OUTPUT" "$FINDING_ID" <<'PYEOF'
 import re, json, sys
 from datetime import datetime, timezone
 
@@ -429,10 +434,10 @@ PYEOF
 # Determine exit code from result
 # ---------------------------------------------------------------------------
 
-OVERALL_RESULT=$(python3 -c "import json; print(json.load(open('$OUTPUT_DIR/verification_stage7_${FINDING_ID}.json'))['overall_result'])")
+OVERALL_RESULT=$(python3 -c "import json; print(json.load(open('$VERIF_OUTPUT'))['overall_result'])")
 
-log "INFO" "Stage 7 completed — result: $OVERALL_RESULT"
-log "INFO" "Report written to $OUTPUT_DIR/verification_stage7_${FINDING_ID}.json"
+log "INFO" "Stage 11 completed — result: $OVERALL_RESULT"
+log "INFO" "Report written to $VERIF_OUTPUT"
 
 if [[ "$OVERALL_RESULT" == "PASS" ]]; then
     exit 0

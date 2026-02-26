@@ -5,28 +5,17 @@ set -euo pipefail
 # test_stage5.sh — Integration tests for Stage 5 orchestrator
 # ============================================================================
 #
-# Tests stage5-implementation.sh with a mock Claude CLI and a real git repo
-# (created in tmpdir).
+# Tests stage5-prd-generation.sh with a mock Claude CLI that writes
+# canned PRD output files.
 #
 # Test cases:
-#   IT-S5-001: Creates feature branch pipeline/improvement-tv-accepted
-#   IT-S5-002: Returns to original branch (main) after processing
-#   IT-S5-003: stage5_summary.json has correct counts
-#   IT-S5-004: Dirty working tree aborts with error
-#   IT-S5-005: No commits produced → finding REJECTED
-#   IT-S5-006: PRD/manifest conflict → REJECTED without Claude session
-#   IT-S5-007: Manifest violation post-implementation → branch deleted
+#   IT-S5-001: Creates prd_output_tv-accepted/prd.md for accepted plans
+#   IT-S5-002: stage5_summary.json has correct counts
+#   IT-S5-003: REJECTED Stage 3 plans are skipped
+#   IT-S5-004: Quality score below 85% → finding REJECTED
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Resolve base branch from project config
-BASE_BRANCH="main"
-PROJECT_CONFIG="$SCRIPT_DIR/../config/project.json"
-if [[ -f "$PROJECT_CONFIG" ]]; then
-    BASE_BRANCH=$(python3 -c "import json; print(json.load(open('$PROJECT_CONFIG')).get('base_branch', 'main'))" 2>/dev/null || echo "main")
-fi
-
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_RUN=0
@@ -47,38 +36,83 @@ fail_test() {
 # Setup
 # ---------------------------------------------------------------------------
 
-setup_mock_builder_repo() {
-    local builder_dir="$1"
+setup_mock_claude() {
+    local mock_dir="$1"
+    local builder_dir="$2"
 
-    mkdir -p "$builder_dir/packages/AIPRDSharedUtilities/Sources/Domain/Ports"
-    mkdir -p "$builder_dir/packages/AIPRDRAGEngine/Sources"
-    mkdir -p "$builder_dir/packages/AIPRDOrchestrationEngine/Sources"
+    mkdir -p "$mock_dir"
 
-    cat > "$builder_dir/packages/AIPRDSharedUtilities/Sources/Domain/Ports/EmbeddingGeneratorPort.swift" <<'EOF'
-public protocol EmbeddingGeneratorPort {
-    func generateEmbedding(for text: String) async throws -> [Float]
+    # Mock Claude writes 4 PRD files to builder_dir (where it runs)
+    cat > "$mock_dir/claude" <<MOCKEOF
+#!/usr/bin/env bash
+# Mock Claude CLI — writes canned PRD files
+BUILDER="$builder_dir"
+
+cat > "\$BUILDER/prd.md" <<'PRDEOF'
+# Feature PRD: Upgrade tv-accepted
+
+## 1. Overview
+Overview text with RAGEngine and OrchestrationEngine references.
+
+## 2. Goals & Success Metrics
+Goals here.
+
+## 3. Requirements
+- FR-TV001-1: Implement contextual scoring
+- FR-TV001-2: Update retrieval pipeline
+- FR-TV001-3: Add scoring weights
+- AC-TV001-1: Scoring produces weighted results
+- AC-TV001-2: Port method available
+- AC-TV001-3: Tests pass
+
+## 4. User Stories
+### PIPE-TV001-1: Contextual Scoring [5 SP]
+Story details.
+### PIPE-TV001-2: Port Update [3 SP]
+Story details.
+### PIPE-TV001-3: Wiring [5 SP]
+Story details.
+
+## 5. Technical Specification
+Architecture follows port/adapter pattern. RAGEngine implements the protocol.
+
+## 6. Implementation Roadmap
+Sprint 1.
+
+## 7. Risk Assessment
+Risks.
+
+## 8. Appendix
+Info.
+PRDEOF
+
+cat > "\$BUILDER/prd-verification.md" <<'VEREOF'
+# Verification Report
+
+**Overall Score:** 90%
+
+### 1. Overview
+- **Score:** 92%
+VEREOF
+
+cat > "\$BUILDER/prd-jira.md" <<'JIRAEOF'
+# JIRA Tickets
+- AC-TV001-1: Implementation ticket
+JIRAEOF
+
+cat > "\$BUILDER/prd-tests.md" <<'TESTEOF'
+# Test Cases
+- UT-001: Test contextual scoring
+- IT-001: Integration test
+- E2E-001: End-to-end test
+TESTEOF
+
+echo '{"status": "complete"}'
+MOCKEOF
+    chmod +x "$mock_dir/claude"
 }
-EOF
 
-    cat > "$builder_dir/packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift" <<'EOF'
-public protocol RAGEngineProtocol {
-    func retrieveContext(query: String) async throws -> RAGResult
-}
-EOF
-
-    cat > "$builder_dir/CLAUDE.md" <<'EOF'
-# Architecture Rules
-- Port/adapter pattern enforced
-EOF
-
-    # Initialize git repo
-    git -C "$builder_dir" init -b "$BASE_BRANCH" > /dev/null 2>&1
-    git -C "$builder_dir" add . > /dev/null 2>&1
-    git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
-        commit -m "Initial commit" > /dev/null 2>&1
-}
-
-setup_mock_claude_with_commit() {
+setup_mock_claude_low_score() {
     local mock_dir="$1"
     local builder_dir="$2"
 
@@ -86,106 +120,136 @@ setup_mock_claude_with_commit() {
 
     cat > "$mock_dir/claude" <<MOCKEOF
 #!/usr/bin/env bash
-# Mock Claude that creates a file and commits it
 BUILDER="$builder_dir"
-echo "// Improvement" >> "\$BUILDER/packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"
-git -C "\$BUILDER" add -A > /dev/null 2>&1
-git -C "\$BUILDER" -c user.name="Test" -c user.email="test@test.com" \
-    commit -m "feat: implement improvement" > /dev/null 2>&1
-echo "Implementation complete"
-MOCKEOF
-    chmod +x "$mock_dir/claude"
-}
 
-setup_mock_claude_no_commit() {
-    local mock_dir="$1"
+cat > "\$BUILDER/prd.md" <<'PRDEOF'
+# Feature PRD
 
-    mkdir -p "$mock_dir"
+## 1. Overview
+Overview with RAGEngine.
 
-    cat > "$mock_dir/claude" <<'MOCKEOF'
-#!/usr/bin/env bash
-# Mock Claude that does nothing
-echo "No changes needed"
-MOCKEOF
-    chmod +x "$mock_dir/claude"
-}
+## 2. Goals
+Goals.
 
-setup_mock_claude_bad_commit() {
-    local mock_dir="$1"
-    local builder_dir="$2"
+## 3. Requirements
+- FR-TV001-1: Req1
+- FR-TV001-2: Req2
+- FR-TV001-3: Req3
+- AC-TV001-1: AC1
+- AC-TV001-2: AC2
+- AC-TV001-3: AC3
 
-    mkdir -p "$mock_dir"
+## 4. Stories
+### PIPE-TV001-1 [3 SP]
+Story.
 
-    # This mock modifies a must_not_change file
-    cat > "$mock_dir/claude" <<MOCKEOF
-#!/usr/bin/env bash
-BUILDER="$builder_dir"
-echo "# Bad change" >> "\$BUILDER/Makefile"
-git -C "\$BUILDER" add -A > /dev/null 2>&1
-git -C "\$BUILDER" -c user.name="Test" -c user.email="test@test.com" \
-    commit -m "feat: bad change" > /dev/null 2>&1
-echo "Done"
+## 5. Technical Specification
+Uses port and adapter and protocol.
+
+## 6. Roadmap
+Sprint.
+
+## 7. Risks
+Risk.
+PRDEOF
+
+cat > "\$BUILDER/prd-verification.md" <<'VEREOF'
+# Verification
+
+**Overall Score:** 75%
+VEREOF
+
+cat > "\$BUILDER/prd-jira.md" <<'JIRAEOF'
+# JIRA
+JIRAEOF
+
+cat > "\$BUILDER/prd-tests.md" <<'TESTEOF'
+# Tests
+- UT-001: Test
+TESTEOF
+
+echo '{"status": "complete"}'
 MOCKEOF
     chmod +x "$mock_dir/claude"
 }
 
 setup_test_fixtures() {
     local tmpdir="$1"
-    local builder_dir="$tmpdir/builder"
 
     mkdir -p "$tmpdir/run_dir" "$tmpdir/output"
 
-    setup_mock_builder_repo "$builder_dir"
+    # Mock builder dir with minimal structure
+    mkdir -p "$tmpdir/builder/packages/AIPRDSharedUtilities/Sources/Domain/Ports"
+    mkdir -p "$tmpdir/builder/packages/AIPRDRAGEngine/Sources"
+    mkdir -p "$tmpdir/builder/packages/AIPRDOrchestrationEngine/Sources"
 
-    # Also create a Makefile in builder (needed for must_not_change tests)
-    cat > "$builder_dir/Makefile" <<'EOF'
-.PHONY: help
-help:
-	@echo "Test builder"
+    cat > "$tmpdir/builder/packages/AIPRDSharedUtilities/Sources/Domain/Ports/EmbeddingGeneratorPort.swift" <<'EOF'
+public protocol EmbeddingGeneratorPort {
+    func generateEmbedding(for text: String) async throws -> [Float]
+}
 EOF
-    git -C "$builder_dir" add Makefile > /dev/null 2>&1
-    git -C "$builder_dir" -c user.name="Test" -c user.email="test@test.com" \
-        commit -m "Add Makefile" > /dev/null 2>&1
 
-    # Engine graph
-    cp "$SCRIPT_DIR/../config/engine_graph.json" "$tmpdir/engine_graph.json"
+    cat > "$tmpdir/builder/packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift" <<'EOF'
+public protocol RAGEngineProtocol {
+    func retrieveContext(query: String) async throws -> RAGResult
+}
+EOF
+
+    cat > "$tmpdir/builder/CLAUDE.md" <<'EOF'
+# Architecture Rules
+- Port/adapter pattern enforced
+EOF
 
     # Config
     cat > "$tmpdir/config.json" <<'EOF'
 {
-  "stage_4": {"prd_quality_minimum": 0.85}
+  "stage_5": {"prd_quality_minimum": 0.85}
 }
 EOF
 
-    # Accepted Stage 4 validation
-    cat > "$tmpdir/run_dir/validation_stage4_tv-accepted.json" <<'EOF'
+    # Use real engine graph and category map
+    cp "$SCRIPT_DIR/../config/engine_graph.json" "$tmpdir/engine_graph.json"
+    cp "$SCRIPT_DIR/../config/category_engine_map.json" "$tmpdir/category_map.json"
+
+    # Accepted Stage 3 validation
+    cat > "$tmpdir/run_dir/validation_stage3_tv-accepted.json" <<'EOF'
 {
-  "stage": "validate_prd_output",
+  "stage": "validate_integration_plan",
   "finding_id": "tv-accepted",
   "result": "ACCEPTED",
   "checks": []
 }
 EOF
 
-    # PRD output dir
-    mkdir -p "$tmpdir/run_dir/prd_output_tv-accepted"
-    cat > "$tmpdir/run_dir/prd_output_tv-accepted/prd.md" <<'EOF'
-# Feature PRD
-## 1. Overview
-Upgrade for RAGEngine scoring.
-## 5. Technical Specification
-Uses port/adapter pattern.
+    # Impact report
+    cat > "$tmpdir/run_dir/impact_report_tv-accepted.json" <<'EOF'
+{
+  "finding_id": "tv-accepted",
+  "finding_title": "Contextual BM25 Scoring",
+  "finding_description": "Improved scoring for retrieval",
+  "source_url": "http://arxiv.org/abs/2401.12345",
+  "finding_category": "retrieval",
+  "relevance_score": 0.87,
+  "affected_engines": ["RAGEngine", "OrchestrationEngine"],
+  "compound_score": 0.65,
+  "propagation_paths": [
+    {"from": "RAGEngine", "to": "OrchestrationEngine", "relationship": "depends_on"}
+  ],
+  "recommendation": "PROCEED"
+}
 EOF
 
     # Integration plan
     cat > "$tmpdir/run_dir/integration_plan_tv-accepted.json" <<'EOF'
 {
   "finding_id": "tv-accepted",
-  "affected_engines": ["RAGEngine"],
+  "affected_engines": ["RAGEngine", "OrchestrationEngine"],
   "modifications": [
     {"engine": "RAGEngine", "files": [{"path": "packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift", "action": "modify"}], "contract_changes": []}
   ],
-  "cross_engine_touchpoints": [],
+  "cross_engine_touchpoints": [
+    {"from": "RAGEngine", "to": "OrchestrationEngine", "via": "RAGEngineProtocol", "description": "Updated"}
+  ],
   "new_files": [],
   "test_files": [],
   "constraints": {}
@@ -196,95 +260,88 @@ EOF
     cat > "$tmpdir/run_dir/manifest_tv-accepted.json" <<'EOF'
 {
   "must_change": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
-  "must_not_change": ["Makefile", "library/Package.swift"],
+  "must_not_change": ["packages/AIPRDEncryptionEngine/Package.swift"],
   "allowed_new_files": []
+}
+EOF
+
+    # REJECTED Stage 3 validation
+    cat > "$tmpdir/run_dir/validation_stage3_tv-rejected.json" <<'EOF'
+{
+  "stage": "validate_integration_plan",
+  "finding_id": "tv-rejected",
+  "result": "REJECTED",
+  "checks": [{"check": "schema_completeness", "result": "FAIL"}]
 }
 EOF
 }
 
 # ---------------------------------------------------------------------------
-# IT-S5-001: Creates feature branch
+# IT-S5-001: Creates PRD output for accepted plans
 # ---------------------------------------------------------------------------
 
-test_creates_feature_branch() {
-    echo "IT-S5-001: Creates feature branch pipeline/improvement-tv-accepted"
+test_creates_prd_output() {
+    echo "IT-S5-001: Creates prd_output_tv-accepted/prd.md for accepted plans"
 
     local tmpdir
     tmpdir=$(mktemp -d)
     setup_test_fixtures "$tmpdir"
 
     local mock_dir="$tmpdir/mock_bin"
-    setup_mock_claude_with_commit "$mock_dir" "$tmpdir/builder"
+    setup_mock_claude "$mock_dir" "$tmpdir/builder"
 
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-implementation.sh" \
+    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-prd-generation.sh" \
         --run-dir "$tmpdir/run_dir" \
+        --packages-dir "$tmpdir/builder/packages" \
         --builder-dir "$tmpdir/builder" \
         --engine-graph "$tmpdir/engine_graph.json" \
+        --category-map "$tmpdir/category_map.json" \
         --config "$tmpdir/config.json" \
         --output "$tmpdir/output" \
         > /dev/null 2>&1
 
-    # Check branch exists
-    if git -C "$tmpdir/builder" branch --list "pipeline/improvement-tv-accepted" | grep -q "pipeline"; then
-        pass_test "Feature branch created"
+    if [[ -f "$tmpdir/output/prd_output_tv-accepted/prd.md" ]]; then
+        pass_test "prd_output_tv-accepted/prd.md created"
     else
-        fail_test "Feature branch" "pipeline/improvement-tv-accepted not found"
+        fail_test "prd_output_tv-accepted/prd.md" "File not found"
+    fi
+
+    # Check all 4 files
+    local all_present=true
+    for f in prd.md prd-verification.md prd-jira.md prd-tests.md; do
+        if [[ ! -f "$tmpdir/output/prd_output_tv-accepted/$f" ]]; then
+            all_present=false
+        fi
+    done
+    if [[ "$all_present" == "true" ]]; then
+        pass_test "All 4 PRD files present"
+    else
+        fail_test "All 4 PRD files" "Some files missing"
     fi
 
     rm -rf "$tmpdir"
 }
 
 # ---------------------------------------------------------------------------
-# IT-S5-002: Returns to original branch
-# ---------------------------------------------------------------------------
-
-test_returns_to_original_branch() {
-    echo "IT-S5-002: Returns to original branch (main) after processing"
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    setup_test_fixtures "$tmpdir"
-
-    local mock_dir="$tmpdir/mock_bin"
-    setup_mock_claude_with_commit "$mock_dir" "$tmpdir/builder"
-
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-implementation.sh" \
-        --run-dir "$tmpdir/run_dir" \
-        --builder-dir "$tmpdir/builder" \
-        --engine-graph "$tmpdir/engine_graph.json" \
-        --config "$tmpdir/config.json" \
-        --output "$tmpdir/output" \
-        > /dev/null 2>&1
-
-    local current_branch
-    current_branch=$(git -C "$tmpdir/builder" branch --show-current)
-    if [[ "$current_branch" == "$BASE_BRANCH" ]]; then
-        pass_test "Returned to $BASE_BRANCH branch"
-    else
-        fail_test "Branch restoration" "Expected '$BASE_BRANCH', got '$current_branch'"
-    fi
-
-    rm -rf "$tmpdir"
-}
-
-# ---------------------------------------------------------------------------
-# IT-S5-003: Summary counts
+# IT-S5-002: Summary counts
 # ---------------------------------------------------------------------------
 
 test_summary_counts() {
-    echo "IT-S5-003: stage5_summary.json has correct counts"
+    echo "IT-S5-002: stage5_summary.json has correct counts"
 
     local tmpdir
     tmpdir=$(mktemp -d)
     setup_test_fixtures "$tmpdir"
 
     local mock_dir="$tmpdir/mock_bin"
-    setup_mock_claude_with_commit "$mock_dir" "$tmpdir/builder"
+    setup_mock_claude "$mock_dir" "$tmpdir/builder"
 
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-implementation.sh" \
+    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-prd-generation.sh" \
         --run-dir "$tmpdir/run_dir" \
+        --packages-dir "$tmpdir/builder/packages" \
         --builder-dir "$tmpdir/builder" \
         --engine-graph "$tmpdir/engine_graph.json" \
+        --category-map "$tmpdir/category_map.json" \
         --config "$tmpdir/config.json" \
         --output "$tmpdir/output" \
         > /dev/null 2>&1
@@ -292,10 +349,10 @@ test_summary_counts() {
     if [[ -f "$tmpdir/output/stage5_summary.json" ]]; then
         local stage
         stage=$(python3 -c "import json; print(json.load(open('$tmpdir/output/stage5_summary.json'))['stage'])")
-        if [[ "$stage" == "implementation" ]]; then
-            pass_test "Summary stage = implementation"
+        if [[ "$stage" == "prd_generation" ]]; then
+            pass_test "Summary stage = prd_generation"
         else
-            fail_test "Summary stage" "Expected 'implementation', got '$stage'"
+            fail_test "Summary stage" "Expected 'prd_generation', got '$stage'"
         fi
     else
         fail_test "stage5_summary.json" "File not found"
@@ -305,58 +362,70 @@ test_summary_counts() {
 }
 
 # ---------------------------------------------------------------------------
-# IT-S5-004: Dirty working tree aborts
+# IT-S5-003: REJECTED Stage 3 plans are skipped
 # ---------------------------------------------------------------------------
 
-test_dirty_tree_aborts() {
-    echo "IT-S5-004: Dirty working tree aborts with error"
+test_rejected_skipped() {
+    echo "IT-S5-003: REJECTED Stage 3 plans are skipped"
 
     local tmpdir
     tmpdir=$(mktemp -d)
     setup_test_fixtures "$tmpdir"
 
-    # Make dirty
-    echo "dirty" >> "$tmpdir/builder/CLAUDE.md"
+    # Remove accepted, keep only rejected
+    rm -f "$tmpdir/run_dir/validation_stage3_tv-accepted.json"
+    rm -f "$tmpdir/run_dir/impact_report_tv-accepted.json"
+    rm -f "$tmpdir/run_dir/integration_plan_tv-accepted.json"
+    rm -f "$tmpdir/run_dir/manifest_tv-accepted.json"
 
     local mock_dir="$tmpdir/mock_bin"
-    setup_mock_claude_with_commit "$mock_dir" "$tmpdir/builder"
+    setup_mock_claude "$mock_dir" "$tmpdir/builder"
 
-    local exit_code=0
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-implementation.sh" \
+    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-prd-generation.sh" \
         --run-dir "$tmpdir/run_dir" \
+        --packages-dir "$tmpdir/builder/packages" \
         --builder-dir "$tmpdir/builder" \
         --engine-graph "$tmpdir/engine_graph.json" \
+        --category-map "$tmpdir/category_map.json" \
         --config "$tmpdir/config.json" \
         --output "$tmpdir/output" \
-        > /dev/null 2>&1 || exit_code=$?
+        > /dev/null 2>&1
 
-    if [[ "$exit_code" -ne 0 ]]; then
-        pass_test "Dirty tree exits with non-zero"
+    if [[ -f "$tmpdir/output/stage5_summary.json" ]]; then
+        local processed
+        processed=$(python3 -c "import json; print(json.load(open('$tmpdir/output/stage5_summary.json'))['findings_processed'])")
+        if [[ "$processed" -eq 0 ]]; then
+            pass_test "No findings processed (all rejected)"
+        else
+            fail_test "Rejected skipping" "Expected 0 processed, got $processed"
+        fi
     else
-        fail_test "Dirty tree" "Expected non-zero exit, got 0"
+        fail_test "stage5_summary.json" "File not found"
     fi
 
     rm -rf "$tmpdir"
 }
 
 # ---------------------------------------------------------------------------
-# IT-S5-005: No commits → REJECTED
+# IT-S5-004: Quality score below 85% → REJECTED
 # ---------------------------------------------------------------------------
 
-test_no_commits_rejected() {
-    echo "IT-S5-005: No commits produced → finding REJECTED"
+test_low_score_rejected() {
+    echo "IT-S5-004: Quality score below 85% → finding REJECTED"
 
     local tmpdir
     tmpdir=$(mktemp -d)
     setup_test_fixtures "$tmpdir"
 
     local mock_dir="$tmpdir/mock_bin"
-    setup_mock_claude_no_commit "$mock_dir"
+    setup_mock_claude_low_score "$mock_dir" "$tmpdir/builder"
 
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-implementation.sh" \
+    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-prd-generation.sh" \
         --run-dir "$tmpdir/run_dir" \
+        --packages-dir "$tmpdir/builder/packages" \
         --builder-dir "$tmpdir/builder" \
         --engine-graph "$tmpdir/engine_graph.json" \
+        --category-map "$tmpdir/category_map.json" \
         --config "$tmpdir/config.json" \
         --output "$tmpdir/output" \
         > /dev/null 2>&1
@@ -365,96 +434,12 @@ test_no_commits_rejected() {
         local rejected
         rejected=$(python3 -c "import json; print(json.load(open('$tmpdir/output/stage5_summary.json')).get('rejected', 0))")
         if [[ "$rejected" -ge 1 ]]; then
-            pass_test "No-commit finding REJECTED"
+            pass_test "Low score finding REJECTED"
         else
-            fail_test "No-commit rejection" "Expected rejected >= 1, got $rejected"
+            fail_test "Low score rejection" "Expected rejected >= 1, got $rejected"
         fi
     else
         fail_test "stage5_summary.json" "File not found"
-    fi
-
-    rm -rf "$tmpdir"
-}
-
-# ---------------------------------------------------------------------------
-# IT-S5-006: PRD/manifest conflict → REJECTED without Claude
-# ---------------------------------------------------------------------------
-
-test_prd_manifest_conflict() {
-    echo "IT-S5-006: PRD/manifest conflict → REJECTED without starting Claude"
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    setup_test_fixtures "$tmpdir"
-
-    # PRD references a must_not_change file
-    cat > "$tmpdir/run_dir/prd_output_tv-accepted/prd.md" <<'EOF'
-# Feature PRD
-Modify packages/AIPRDEncryptionEngine/Package.swift for security.
-EOF
-
-    # Update manifest to protect that file
-    cat > "$tmpdir/run_dir/manifest_tv-accepted.json" <<'EOF'
-{
-  "must_change": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
-  "must_not_change": ["packages/AIPRDEncryptionEngine/Package.swift", "Makefile"],
-  "allowed_new_files": []
-}
-EOF
-
-    local mock_dir="$tmpdir/mock_bin"
-    setup_mock_claude_with_commit "$mock_dir" "$tmpdir/builder"
-
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-implementation.sh" \
-        --run-dir "$tmpdir/run_dir" \
-        --builder-dir "$tmpdir/builder" \
-        --engine-graph "$tmpdir/engine_graph.json" \
-        --config "$tmpdir/config.json" \
-        --output "$tmpdir/output" \
-        > /dev/null 2>&1
-
-    if [[ -f "$tmpdir/output/stage5_summary.json" ]]; then
-        local rejected
-        rejected=$(python3 -c "import json; print(json.load(open('$tmpdir/output/stage5_summary.json')).get('rejected', 0))")
-        if [[ "$rejected" -ge 1 ]]; then
-            pass_test "PRD/manifest conflict REJECTED"
-        else
-            fail_test "PRD/manifest conflict" "Expected rejected >= 1, got $rejected"
-        fi
-    else
-        fail_test "stage5_summary.json" "File not found"
-    fi
-
-    rm -rf "$tmpdir"
-}
-
-# ---------------------------------------------------------------------------
-# IT-S5-007: Manifest violation → branch deleted
-# ---------------------------------------------------------------------------
-
-test_manifest_violation_branch_deleted() {
-    echo "IT-S5-007: Manifest violation post-implementation → branch deleted"
-
-    local tmpdir
-    tmpdir=$(mktemp -d)
-    setup_test_fixtures "$tmpdir"
-
-    local mock_dir="$tmpdir/mock_bin"
-    setup_mock_claude_bad_commit "$mock_dir" "$tmpdir/builder"
-
-    PATH="$mock_dir:$PATH" "$SCRIPT_DIR/stage5-implementation.sh" \
-        --run-dir "$tmpdir/run_dir" \
-        --builder-dir "$tmpdir/builder" \
-        --engine-graph "$tmpdir/engine_graph.json" \
-        --config "$tmpdir/config.json" \
-        --output "$tmpdir/output" \
-        > /dev/null 2>&1
-
-    # Branch should be deleted
-    if git -C "$tmpdir/builder" branch --list "pipeline/improvement-tv-accepted" | grep -q "pipeline"; then
-        fail_test "Branch deletion" "Branch still exists after manifest violation"
-    else
-        pass_test "Rejected branch deleted"
     fi
 
     rm -rf "$tmpdir"
@@ -467,13 +452,10 @@ test_manifest_violation_branch_deleted() {
 echo "=== Stage 5 Integration Tests ==="
 echo ""
 
-test_creates_feature_branch
-test_returns_to_original_branch
+test_creates_prd_output
 test_summary_counts
-test_dirty_tree_aborts
-test_no_commits_rejected
-test_prd_manifest_conflict
-test_manifest_violation_branch_deleted
+test_rejected_skipped
+test_low_score_rejected
 
 echo ""
 echo "=== Results: $TESTS_PASSED/$TESTS_RUN passed ==="

@@ -187,7 +187,7 @@ class TestComposePR(unittest.TestCase):
             json.dump(ENFORCEMENT_REPORT, f)
 
         # Verification result
-        with open(os.path.join(self.run_dir, "verification_stage7_tv-001.json"), "w") as f:
+        with open(os.path.join(self.run_dir, "verification_stage11_tv-001.json"), "w") as f:
             json.dump(VERIFICATION_RESULT, f)
 
         # Retry summary

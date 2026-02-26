@@ -7,7 +7,7 @@ HOOK_OUTPUT=$(mktemp -d)
 trap 'rm -rf "$HOOK_OUTPUT"' EXIT
 
 echo "[pre-commit] Running quality gates..."
-"$PIPELINE_REPO/scripts/stage6-gates.sh" \
+"$PIPELINE_REPO/scripts/stage10-gates.sh" \
     --builder-dir "$BUILDER_DIR" \
     --config "$PIPELINE_REPO/config/thresholds.json" \
     --patterns "$PIPELINE_REPO/config/prohibited_patterns.txt" \

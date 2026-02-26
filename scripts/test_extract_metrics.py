@@ -30,14 +30,11 @@ from extract_prd_metrics import (
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Fixtures — dogfood PRD output bundled in the repo
 # ---------------------------------------------------------------------------
 
 DOGFOOD_DIR = os.path.join(
-    os.environ.get("PIPELINE_BUILDER", os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "target-product"
-    )),
-    "dogfood", "pipeline-feedback"
+    os.path.dirname(os.path.abspath(__file__)), "..", "dogfood", "pipeline-feedback"
 )
 
 VERIFICATION_FILE = os.path.join(
@@ -54,11 +51,6 @@ TESTS_FILE = os.path.join(
     DOGFOOD_DIR,
     "PRD-PipelineFeedback-Epic1-DeterministicFoundation-tests.md"
 )
-
-
-def has_dogfood():
-    """Check if dogfood fixtures are available."""
-    return os.path.isfile(VERIFICATION_FILE)
 
 
 # ---------------------------------------------------------------------------
@@ -139,7 +131,7 @@ class TestParseStrategies(unittest.TestCase):
 # Full file parsing tests (require dogfood fixtures)
 # ---------------------------------------------------------------------------
 
-@unittest.skipUnless(has_dogfood(), "Dogfood fixtures not available")
+
 class TestParseVerificationFile(unittest.TestCase):
     def test_overall_score_is_93(self):
         result = parse_verification(VERIFICATION_FILE)
@@ -167,7 +159,7 @@ class TestParseVerificationFile(unittest.TestCase):
         self.assertGreaterEqual(len(result["strategies_used"]), 5)
 
 
-@unittest.skipUnless(has_dogfood(), "Dogfood fixtures not available")
+
 class TestParsePRDFile(unittest.TestCase):
     def test_section_count_is_8(self):
         result = parse_prd_structure(PRD_FILE)
@@ -191,7 +183,7 @@ class TestParsePRDFile(unittest.TestCase):
         self.assertEqual(result["ac_count"], 35)
 
 
-@unittest.skipUnless(has_dogfood(), "Dogfood fixtures not available")
+
 class TestParseTestFile(unittest.TestCase):
     def test_total_tests_52(self):
         result = parse_tests(TESTS_FILE)
@@ -285,7 +277,7 @@ class TestComputeTraceability(unittest.TestCase):
 # CLI integration test
 # ---------------------------------------------------------------------------
 
-@unittest.skipUnless(has_dogfood(), "Dogfood fixtures not available")
+
 class TestCLI(unittest.TestCase):
     def test_full_extraction(self):
         with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:

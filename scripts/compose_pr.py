@@ -318,7 +318,7 @@ def main():
     enforcement_path = find_file(run_dir, "enforcement_report.json")
     enforcement = load_json(enforcement_path)
 
-    verification_path = find_file(run_dir, f"verification_stage7_{fid}.json")
+    verification_path = find_file(run_dir, f"verification_stage11_{fid}.json", f"verification_stage7_{fid}.json")
     verification = load_json(verification_path)
 
     retry_path = find_file(run_dir, f"retry_summary_{fid}.json")

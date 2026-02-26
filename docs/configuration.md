@@ -28,7 +28,7 @@ vim config/pipeline.yml
 make pipeline-health
 ```
 
-The target product repository must be a git repository. If it has a `CLAUDE.md` file describing its architecture, the pipeline uses it to enrich Stages 3, 5, and 7.
+The target product repository must be a git repository. If it has a `CLAUDE.md` file describing its architecture, the pipeline uses it to enrich Stages 3, 7, and 11.
 
 ---
 
@@ -79,7 +79,7 @@ resolve_config.py (generates files scripts already expect)
 | `pr` | `title`, `labels`, `label_engines`, `prd_max_lines` | pipeline-generated + improvement labels, 100 lines |
 | `pipeline` | `top_n_findings`, `max_implementations`, `claude_max_turns`, `claude_timeout` | 20, 5, 30 turns impl, 1800s impl |
 | `notifications` | `enabled`, `sound`, `title` | true, Glass, AI-Architect Pipeline |
-| `thresholds` | `stage_2.compound_score_minimum`, `stage_4.prd_quality_minimum`, `retry.max_attempts` | 0.3, 0.85, 3 |
+| `thresholds` | `stage_2.compound_score_minimum`, `stage_5.prd_quality_minimum`, `retry.max_attempts` | 0.3, 0.85, 3 |
 | `schedule` | `hour`, `minute` | 2:00 AM |
 
 ## Config management commands
@@ -164,7 +164,7 @@ pr:
 │   ├── resolve_config.py            # pipeline.yml -> individual config files
 │   ├── setup_wizard.py              # Interactive setup wizard
 │   ├── load_project_config.py       # Shared config loader
-│   ├── stage[1-10]-*.sh             # Individual stage scripts
+│   ├── stage[1-14]-*.sh             # Individual stage scripts
 │   ├── validate_*.py                # Output validators
 │   └── test_*.{sh,py}              # Test suite
 ├── benchmarks/
@@ -196,25 +196,34 @@ Computes a compound impact score across four dimensions: modules affected, propa
 ### Stage 3 — Integration design
 Designs architectural modifications respecting the target product's architecture. Enforces [design principles](quality-rules.md#design-principles-in-implementation): parameterization, centralization, composability, backward compatibility. Validates that all referenced files exist and interface changes are consistent.
 
-### Stage 4 — PRD generation
+### Stage 4 — Plan Deliberation (Apple Intelligence only)
+Skipped in CLI/Docker mode. On macOS with Apple Intelligence, deliberates on the integration plan.
+
+### Stage 5 — PRD generation
 Invokes the **AI PRD Generator** skill to produce four documents: `prd.md`, `prd-verification.md`, `prd-jira.md`, and `prd-tests.md`. Enforces all [64 hard output rules](quality-rules.md). Scope (simple/moderate/complex) is derived automatically from pipeline artifacts.
 
-### Stage 5 — Implementation
+### Stage 6 — PRD review
+An independent AI review of the generated PRD for completeness, consistency, and actionability.
+
+### Stage 7 — Implementation
 Creates a feature branch, implements code changes following the PRD and integration plan, builds the project, and runs tests. Enforces [code quality rules](quality-rules.md#architecture--code-quality-rules-18-24), [security rules](quality-rules.md#security-rules-25-32), [resilience rules](quality-rules.md#error-handling--resilience-rules-39-43), and [testing rules](quality-rules.md#comprehensive-testing-rules-53-58).
 
-### Stage 6 — Quality gates
+### Stages 8-9 — Drift Reconciliation & Agreement (Apple Intelligence only)
+Skipped in CLI/Docker mode. On macOS with Apple Intelligence, reconciles implementation drift.
+
+### Stage 10 — Quality gates
 Runs deterministic checks: prohibited pattern detection, orphan file detection, build verification, test suite, and deployment verification.
 
-### Stage 7 — Semantic verification
+### Stage 11 — Semantic verification
 An independent verifier analyzes the git diff against the PRD. Checks alignment score (must be >= 0.7), cross-module consistency, anti-patterns, and [solution genericity](quality-rules.md#design-principles-in-implementation) — flags hardcoded constants, single-purpose parameters, and non-extensible designs.
 
-### Stage 8 — Benchmark
+### Stage 12 — Benchmark
 Measures quality metrics and compares against baselines. Informational — does not block the pipeline.
 
-### Stage 9 — Deployment simulation
+### Stage 13 — Deployment simulation
 Runs the configured `deploy_command` from `config/project.json`. If no deploy command is configured, the stage passes automatically.
 
-### Stage 10 — Pull request
+### Stage 14 — Pull request
 Creates a pull request per finding with a structured description linking back to the impact analysis and PRD.
 
 ## Run individual stages via Make
@@ -227,13 +236,14 @@ export PIPELINE_BUILDER="/path/to/your-product"
 make pipeline-stage1          # Parse findings
 make pipeline-stage2          # Impact analysis
 make pipeline-stage3          # Integration design
-make pipeline-stage4          # PRD generation (requires license)
-make pipeline-stage5          # Implementation
-make pipeline-gates           # Quality gates
-make pipeline-stage7          # Semantic verification
-make pipeline-benchmark       # Benchmarking
-make pipeline-stage9          # Deployment simulation
-make pipeline-stage10         # PR creation
+make pipeline-stage5          # PRD generation (requires license)
+make pipeline-stage6          # PRD review
+make pipeline-stage7          # Implementation
+make pipeline-gates           # Quality gates (stage 10)
+make pipeline-stage11         # Semantic verification
+make pipeline-benchmark       # Benchmarking (stage 12)
+make pipeline-stage13         # Deployment simulation
+make pipeline-stage14         # PR creation
 ```
 
 ## Schedule nightly runs

@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # ============================================================================
-# stage4-prd-generation.sh — Stage 4: PRD Generation (Dogfood via SKILL.md)
+# stage5-prd-generation.sh — Stage 5: PRD Generation (Dogfood via SKILL.md)
 # ============================================================================
 #
 # Processes accepted integration plans through the product's own PRD
 # generation flow (SKILL.md via Claude Code CLI).
 #
-# Usage (called by Makefile pipeline-stage4):
-#   scripts/stage4-prd-generation.sh \
+# Usage (called by Makefile pipeline-stage5):
+#   scripts/stage5-prd-generation.sh \
 #       --run-dir runs/TIMESTAMP \
 #       --packages-dir /path/to/target-product/packages \
 #       --builder-dir /path/to/target-product \
@@ -21,7 +21,7 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STAGE_NAME="stage4_prd_generation"
+STAGE_NAME="stage5_prd_generation"
 
 # ---------------------------------------------------------------------------
 # Structured logging
@@ -51,6 +51,9 @@ run_with_timeout() {
 
 # Source shared AI invocation helper
 source "$SCRIPT_DIR/ai_invoke.sh"
+
+# Source artifact path helpers
+source "$SCRIPT_DIR/artifact_paths.sh"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -145,7 +148,7 @@ if ! command -v claude &> /dev/null; then
     exit 1
 fi
 
-# Resolve paths to absolute (Stage 4 cd's to BUILDER_DIR)
+# Resolve paths to absolute (Stage 5 cd's to BUILDER_DIR)
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
 OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" && pwd)/$(basename "$OUTPUT_DIR")"
 BUILDER_DIR="$(cd "$BUILDER_DIR" && pwd)"
@@ -212,19 +215,37 @@ log "INFO" "Contracts extracted"
 # ---------------------------------------------------------------------------
 
 ACCEPTED_FINDINGS=()
-for validation_file in "$RUN_DIR"/validation_stage3_*.json; do
+# Scan new layout (findings/$FID/stage3-validation.json) and old layout
+_scan_s3_files=()
+for vf in "$RUN_DIR"/findings/*/stage3-validation.json; do
+    [[ -f "$vf" ]] && _scan_s3_files+=("$vf")
+done
+for vf in "$RUN_DIR"/validation_stage3_*.json; do
+    [[ -f "$vf" ]] && _scan_s3_files+=("$vf")
+done
+for validation_file in "${_scan_s3_files[@]}"; do
     [[ ! -f "$validation_file" ]] && continue
 
     RESULT=$(python3 -c "import json; print(json.load(open('$validation_file')).get('result', ''))" 2>/dev/null || echo "")
     if [[ "$RESULT" == "ACCEPTED" ]]; then
         FINDING_ID=$(python3 -c "import json; print(json.load(open('$validation_file')).get('finding_id', ''))" 2>/dev/null || echo "")
         if [[ -n "$FINDING_ID" ]]; then
-            ACCEPTED_FINDINGS+=("$FINDING_ID")
+            local already=false
+            for existing in "${ACCEPTED_FINDINGS[@]+"${ACCEPTED_FINDINGS[@]}"}"; do
+                [[ "$existing" == "$FINDING_ID" ]] && already=true && break
+            done
+            [[ "$already" == "false" ]] && ACCEPTED_FINDINGS+=("$FINDING_ID")
         fi
     fi
 done
 
-log "INFO" "Stage 4 started — PRD Generation (Dogfood)"
+# Detect license tier (free tier uses simplified PRD template)
+LICENSE_TIER="${PIPELINE_LICENSE_TIER:-pro}"
+if [[ "$LICENSE_TIER" != "pro" ]]; then
+    log "INFO" "Free tier — using simplified PRD template (5 core sections)"
+fi
+
+log "INFO" "Stage 5 started — PRD Generation (Dogfood)"
 log "INFO" "Found ${#ACCEPTED_FINDINGS[@]} accepted integration plans"
 
 if [[ ${#ACCEPTED_FINDINGS[@]} -eq 0 ]]; then
@@ -241,7 +262,7 @@ summary = {
     'failed': 0,
     'reports': [],
 }
-with open('$OUTPUT_DIR/stage4_summary.json', 'w') as f:
+with open('$OUTPUT_DIR/stage5_summary.json', 'w') as f:
     json.dump(summary, f, indent=2)
     f.write('\n')
 "
@@ -289,9 +310,9 @@ for FINDING_ID in "${ACCEPTED_FINDINGS[@]}"; do
     log "INFO" "Processing finding: $FINDING_ID"
     PROCESSED=$((PROCESSED + 1))
 
-    IMPACT_REPORT="$RUN_DIR/impact_report_${FINDING_ID}.json"
-    INTEGRATION_PLAN="$RUN_DIR/integration_plan_${FINDING_ID}.json"
-    MANIFEST="$RUN_DIR/manifest_${FINDING_ID}.json"
+    IMPACT_REPORT=$(artifact_impact "$RUN_DIR" "$FINDING_ID")
+    INTEGRATION_PLAN=$(artifact_integration "$RUN_DIR" "$FINDING_ID")
+    MANIFEST=$(artifact_manifest "$RUN_DIR" "$FINDING_ID")
 
     if [[ ! -f "$IMPACT_REPORT" ]]; then
         log "WARN" "Impact report not found: $IMPACT_REPORT — skipping"
@@ -430,7 +451,7 @@ RETRY_EOF
         CLAUDE_EXIT=0
 
         cd "$BUILDER_DIR"
-        ai_invoke "$CURRENT_PROMPT" "$RAW_OUTPUT" "stage4" "$FINDING_ID" \
+        ai_invoke "$CURRENT_PROMPT" "$RAW_OUTPUT" "stage5" "$FINDING_ID" \
             --max-turns 20 \
             || CLAUDE_EXIT=$?
 
@@ -462,18 +483,29 @@ RETRY_EOF
         METRICS_FILE="$TMP_DIR/metrics_${FINDING_ID}.json"
         METRICS_EXIT=0
 
-        METRICS_ARGS=(--output "$METRICS_FILE")
-        [[ -f "$WORKSPACE/prd.md" ]] && METRICS_ARGS+=(--prd "$WORKSPACE/prd.md")
-        [[ -f "$WORKSPACE/prd-verification.md" ]] && METRICS_ARGS+=(--verification "$WORKSPACE/prd-verification.md")
-        [[ -f "$WORKSPACE/prd-tests.md" ]] && METRICS_ARGS+=(--tests "$WORKSPACE/prd-tests.md")
+        if [[ "$LICENSE_TIER" == "pro" ]]; then
+            METRICS_ARGS=(--output "$METRICS_FILE")
+            [[ -f "$WORKSPACE/prd.md" ]] && METRICS_ARGS+=(--prd "$WORKSPACE/prd.md")
+            [[ -f "$WORKSPACE/prd-verification.md" ]] && METRICS_ARGS+=(--verification "$WORKSPACE/prd-verification.md")
+            [[ -f "$WORKSPACE/prd-tests.md" ]] && METRICS_ARGS+=(--tests "$WORKSPACE/prd-tests.md")
 
-        python3 "$SCRIPT_DIR/extract_prd_metrics.py" \
-            "${METRICS_ARGS[@]}" > /dev/null 2>&1 || METRICS_EXIT=$?
+            python3 "$SCRIPT_DIR/extract_prd_metrics.py" \
+                "${METRICS_ARGS[@]}" > /dev/null 2>&1 || METRICS_EXIT=$?
 
-        if [[ "$METRICS_EXIT" -ne 0 ]]; then
-            log "WARN" "Metrics extraction failed for $FINDING_ID (attempt $PRD_ATTEMPT)"
-            FAILURE_CONTEXT="Metrics extraction failed. Ensure prd-verification.md includes '**Overall Score:** NN%' and prd.md has proper FR/AC IDs."
-            continue
+            if [[ "$METRICS_EXIT" -ne 0 ]]; then
+                log "WARN" "Metrics extraction failed for $FINDING_ID (attempt $PRD_ATTEMPT)"
+                FAILURE_CONTEXT="Metrics extraction failed. Ensure prd-verification.md includes '**Overall Score:** NN%' and prd.md has proper FR/AC IDs."
+                continue
+            fi
+        else
+            # Free tier: generate minimal metrics (skip extract_prd_metrics.py)
+            python3 -c "
+import json
+metrics = {'verification': {'overall_score': None}, 'tier': 'free'}
+with open('$METRICS_FILE', 'w') as f:
+    json.dump(metrics, f, indent=2)
+" 2>/dev/null
+            log "INFO" "Free tier: skipped detailed metrics for $FINDING_ID"
         fi
 
         # Quality gate
@@ -481,7 +513,7 @@ RETRY_EOF
 import json, sys
 metrics = json.load(open(sys.argv[1]))
 config = json.load(open(sys.argv[2]))
-threshold = config.get("stage_4", {}).get("prd_quality_minimum", 0.85)
+threshold = config.get("stage_5", {}).get("prd_quality_minimum", 0.85)
 score = (metrics.get("verification", {}) or {}).get("overall_score")
 if score is None:
     print("NO_SCORE")
@@ -500,7 +532,7 @@ PYEOF
         fi
 
         # Validate PRD output
-        VALIDATION_FILE="$OUTPUT_DIR/validation_stage4_${FINDING_ID}.json"
+        VALIDATION_FILE=$(artifact_validation5 "$OUTPUT_DIR" "$FINDING_ID")
         VALIDATE_EXIT=0
 
         python3 "$SCRIPT_DIR/validate_prd_output.py" \
@@ -532,7 +564,7 @@ for f in failures:
 
     if [[ "$PRD_ACCEPTED" == "true" ]]; then
         # Copy PRD files + metrics to output
-        PRD_OUTPUT_DIR="$OUTPUT_DIR/prd_output_${FINDING_ID}"
+        PRD_OUTPUT_DIR=$(artifact_prd_dir "$OUTPUT_DIR" "$FINDING_ID")
         mkdir -p "$PRD_OUTPUT_DIR"
         cp "$WORKSPACE"/*.md "$PRD_OUTPUT_DIR/" 2>/dev/null || true
         cp "$METRICS_FILE" "$PRD_OUTPUT_DIR/metrics.json" 2>/dev/null || true
@@ -552,12 +584,12 @@ print('; '.join(failures[:3]))" 2>/dev/null || echo "validation failed")
 done
 
 # ---------------------------------------------------------------------------
-# Write stage4_summary.json
+# Write stage5_summary.json
 # ---------------------------------------------------------------------------
 
 TOTAL=$((ACCEPTED_COUNT + REJECTED_COUNT + FAILED_COUNT))
 
-python3 - "$SUMMARY_FILE" "$OUTPUT_DIR/stage4_summary.json" "$TOTAL" "$ACCEPTED_COUNT" "$REJECTED_COUNT" "$FAILED_COUNT" <<'PYEOF'
+python3 - "$SUMMARY_FILE" "$OUTPUT_DIR/stage5_summary.json" "$TOTAL" "$ACCEPTED_COUNT" "$REJECTED_COUNT" "$FAILED_COUNT" <<'PYEOF'
 import json, sys
 from datetime import datetime, timezone
 
@@ -583,7 +615,7 @@ with open(output_file, 'w') as f:
     f.write('\n')
 PYEOF
 
-log "INFO" "Stage 4 completed — processed=$TOTAL accepted=$ACCEPTED_COUNT rejected=$REJECTED_COUNT failed=$FAILED_COUNT"
-log "INFO" "Summary written to $OUTPUT_DIR/stage4_summary.json"
+log "INFO" "Stage 5 completed — processed=$TOTAL accepted=$ACCEPTED_COUNT rejected=$REJECTED_COUNT failed=$FAILED_COUNT"
+log "INFO" "Summary written to $OUTPUT_DIR/stage5_summary.json"
 
 exit 0

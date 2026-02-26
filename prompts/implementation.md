@@ -1,4 +1,4 @@
-# Stage 5: Implement Upgrade
+# Stage 7: Implement Upgrade
 
 ## Your Role
 You are implementing an upgrade to the target product.

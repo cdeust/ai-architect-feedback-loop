@@ -217,8 +217,8 @@ def prioritize(findings, category_map, engine_graph, top_n,
 
     Args:
         exclude_categories: Set of category names to skip (e.g. {"benchmarks"}).
-            Benchmark findings are for Stage 8 quality tracking, not for the
-            implementation loop (Stages 2-7).
+            Benchmark findings are for Stage 12 quality tracking, not for the
+            implementation loop (Stages 2-11).
 
     Returns list of prioritized findings.
     """
@@ -286,7 +286,7 @@ def main(argv=None):
     parser.add_argument(
         "--exclude-categories", nargs="*", default=["benchmarks"],
         help="Categories to exclude from prioritization (default: benchmarks). "
-             "Benchmark findings are for Stage 8 quality tracking, not for "
+             "Benchmark findings are for Stage 12 quality tracking, not for "
              "the implementation loop."
     )
     args = parser.parse_args(argv)

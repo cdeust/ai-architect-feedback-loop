@@ -66,10 +66,26 @@ def collect_findings_summary(run_dir):
         prioritized_count = len(prioritized["prioritized"])
 
     # Count implemented vs failed from retry summaries
+    # Scan both new layout (findings/$FID/retry-summary.json) and old flat layout
     implemented = 0
     failed = 0
     prs_created = 0
 
+    findings_dir = os.path.join(run_dir, "findings")
+    if os.path.isdir(findings_dir):
+        for fid in os.listdir(findings_dir):
+            fid_dir = os.path.join(findings_dir, fid)
+            if not os.path.isdir(fid_dir):
+                continue
+            retry = load_json(os.path.join(fid_dir, "retry-summary.json"))
+            if retry:
+                result = retry.get("result", retry.get("final_result", ""))
+                if result in ("ACCEPTED", "SUCCESS"):
+                    implemented += 1
+                elif result in ("EXHAUSTED", "FAILED"):
+                    failed += 1
+
+    # Fallback: scan old flat layout
     for fname in os.listdir(run_dir):
         if fname.startswith("retry_summary_") and fname.endswith(".json"):
             data = load_json(os.path.join(run_dir, fname))
@@ -80,7 +96,7 @@ def collect_findings_summary(run_dir):
                 elif result in ("EXHAUSTED", "FAILED"):
                     failed += 1
 
-        if fname.startswith("stage10_summary_") and fname.endswith(".json"):
+        if fname.startswith("stage14_summary_") and fname.endswith(".json"):
             data = load_json(os.path.join(run_dir, fname))
             if data and data.get("pr_url"):
                 prs_created += 1
@@ -139,15 +155,29 @@ def collect_engines_improved(run_dir, engine_graph, category_map):
         mappings = category_map["mappings"]
 
     # Scan impact reports for finding→engine mapping
+    # Check new layout first, then old flat layout
+    _impact_reports = {}  # fid -> data
+    findings_dir = os.path.join(run_dir, "findings")
+    if os.path.isdir(findings_dir):
+        for fid in os.listdir(findings_dir):
+            impact_path = os.path.join(findings_dir, fid, "stage2-impact.json")
+            if os.path.isfile(impact_path):
+                data = load_json(impact_path)
+                if data:
+                    _impact_reports[fid] = data
     for fname in os.listdir(run_dir):
         if fname.startswith("impact_report_") and fname.endswith(".json"):
             fid = fname.replace("impact_report_", "").replace(".json", "")
-            data = load_json(os.path.join(run_dir, fname))
-            if not data:
-                continue
+            if fid not in _impact_reports:
+                data = load_json(os.path.join(run_dir, fname))
+                if data:
+                    _impact_reports[fid] = data
 
+    for fid, data in _impact_reports.items():
             # Check if this finding was successfully implemented
-            retry = load_json(os.path.join(run_dir, f"retry_summary_{fid}.json"))
+            retry = load_json(os.path.join(run_dir, "findings", fid, "retry-summary.json"))
+            if not retry:
+                retry = load_json(os.path.join(run_dir, f"retry_summary_{fid}.json"))
             result = ""
             if retry:
                 result = retry.get("result", retry.get("final_result", ""))
@@ -155,10 +185,10 @@ def collect_engines_improved(run_dir, engine_graph, category_map):
                 continue
 
             # Get PR URL
-            stage10 = load_json(os.path.join(run_dir, f"stage10_summary_{fid}.json"))
+            stage14 = load_json(os.path.join(run_dir, f"stage14_summary_{fid}.json"))
             pr_url = ""
-            if stage10:
-                pr_url = stage10.get("pr_url", "")
+            if stage14:
+                pr_url = stage14.get("pr_url", "")
 
             # Determine affected engines and ports
             category = data.get("category", data.get("relevance_category", ""))
@@ -279,10 +309,10 @@ def collect_failed_findings(run_dir):
 
 
 def collect_pr_urls(run_dir):
-    """Collect all PR URLs from stage10 summaries."""
+    """Collect all PR URLs from stage14 summaries."""
     urls = []
     for fname in os.listdir(run_dir):
-        if fname.startswith("stage10_summary_") and fname.endswith(".json"):
+        if fname.startswith("stage14_summary_") and fname.endswith(".json"):
             data = load_json(os.path.join(run_dir, fname))
             if data and data.get("pr_url"):
                 urls.append(data["pr_url"])

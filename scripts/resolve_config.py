@@ -78,6 +78,15 @@ PIPELINE_DEFAULTS = {
     "findings_source": "auto",
     "claude_max_turns": {"analysis": 5, "implementation": 30, "verification": 5},
     "claude_timeout": {"default": 300, "implementation": 1800},
+    "claude_model": {
+        "analysis": "haiku",
+        "prd": "opus",
+        "implementation": "sonnet",
+        "verification": "sonnet",
+        "reviewer": "opus",
+        "benchmark": "haiku",
+        "default": "sonnet",
+    },
 }
 
 NOTIFICATIONS_DEFAULTS = {
@@ -105,15 +114,15 @@ THRESHOLDS_DEFAULTS = {
         "compound_score_minimum": 0.3,
         "engines_affected_minimum": 2,
     },
-    "stage_4": {
+    "stage_5": {
         "prd_quality_minimum": 0.85,
     },
-    "stage_6": {
+    "stage_10": {
         "prohibited_patterns_file": "config/prohibited_patterns.txt",
         "orphan_detection_extensions": "from_project_config",
         "orphan_detection_exclude_dirs": [".build", ".git", "runs", "logs", "benchmarks"],
     },
-    "stage_8": {
+    "stage_12": {
         "regression_threshold": 0.05,
         "dimensions": ["completeness", "accuracy", "consistency", "actionability"],
     },
@@ -287,7 +296,7 @@ def load_pipeline_yaml(config_path):
     pipeline_cfg = dict(PIPELINE_DEFAULTS)
     raw_pipeline = raw.get("pipeline", {})
     # Deep-merge nested dicts
-    for key in ("claude_max_turns", "claude_timeout"):
+    for key in ("claude_max_turns", "claude_timeout", "claude_model"):
         if key in raw_pipeline and isinstance(raw_pipeline[key], dict):
             merged = dict(PIPELINE_DEFAULTS.get(key, {}))
             merged.update(raw_pipeline[key])

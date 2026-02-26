@@ -8,7 +8,7 @@ The pipeline enforces **64 hard output rules** across PRD generation, implementa
 
 ## Core PRD rules (1-17)
 
-Rules enforced during Stage 4 PRD generation:
+Rules enforced during Stage 5 PRD generation:
 
 | Rule | What it enforces |
 |---|---|
@@ -124,7 +124,7 @@ Rules enforced during Stage 4 PRD generation:
 
 ## Design principles in implementation
 
-Stage 5 (Implementation) and Stage 7 (Verification) enforce scalable design:
+Stage 7 (Implementation) and Stage 11 (Verification) enforce scalable design:
 
 - **Parameterize, don't hardcode** — caller-specific values belong in the caller, not in shared code
 - **Centralize decisions** — one change should propagate everywhere, not require editing 500 files
@@ -132,4 +132,4 @@ Stage 5 (Implementation) and Stage 7 (Verification) enforce scalable design:
 - **Backward compatibility via defaults** — new parameters must default to existing behavior
 - **Scalability test** — "If three more teams hit a similar problem, would this design handle their cases without changes?"
 
-Stage 7 independently flags violations: hardcoded constants in shared code, single-purpose parameters, bug-specific naming, code duplication, and non-extensible shared components.
+Stage 11 independently flags violations: hardcoded constants in shared code, single-purpose parameters, bug-specific naming, code duplication, and non-extensible shared components.

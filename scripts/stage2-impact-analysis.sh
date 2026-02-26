@@ -55,6 +55,9 @@ run_with_timeout() {
 # Source shared AI invocation helper
 source "$SCRIPT_DIR/ai_invoke.sh"
 
+# Source artifact path helpers
+source "$SCRIPT_DIR/artifact_paths.sh"
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -376,7 +379,7 @@ PYEOF
     fi
 
     # Extract JSON from Claude output
-    REPORT_FILE="$OUTPUT_DIR/impact_report_${FINDING_ID}.json"
+    REPORT_FILE=$(artifact_impact "$OUTPUT_DIR" "$FINDING_ID")
     EXTRACT_EXIT=0
     python3 - "$RAW_OUTPUT" "$REPORT_FILE" <<'PYEOF' || EXTRACT_EXIT=$?
 import json, sys
@@ -432,7 +435,7 @@ PYEOF
     fi
 
     # Validate via validate_impact_report.py
-    VALIDATION_FILE="$OUTPUT_DIR/validation_stage2_${FINDING_ID}.json"
+    VALIDATION_FILE=$(artifact_validation2 "$OUTPUT_DIR" "$FINDING_ID")
     VALIDATE_EXIT=0
 
     VALIDATE_ARGS=(

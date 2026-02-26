@@ -1,4 +1,4 @@
-# Stage 7: Independent Semantic Verification
+# Stage 11: Independent Semantic Verification
 
 ## Your Role
 You are a VERIFICATION AGENT — completely separate from the implementation agent.

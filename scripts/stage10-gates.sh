@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# stage6-gates.sh — Stage 6: Deterministic Enforcement Gates
+# stage10-gates.sh — Stage 10: Deterministic Enforcement Gates
 # ============================================================================
 #
 # Runs 6 deterministic quality gates against the builder project.
@@ -18,7 +18,7 @@ set -euo pipefail
 #   6. Encryption integrity (make distribute)
 #
 # Usage (called by Makefile pipeline-gates):
-#   scripts/stage6-gates.sh \
+#   scripts/stage10-gates.sh \
 #       --builder-dir /path/to/target-product \
 #       --config config/thresholds.json \
 #       --patterns config/prohibited_patterns.txt \
@@ -30,7 +30,7 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STAGE_NAME="stage6_enforcement"
+STAGE_NAME="stage10_enforcement"
 
 # Resolve base branch from project config
 BASE_BRANCH="main"
@@ -580,7 +580,19 @@ run_gate_5() {
     local test_exit=0
     local test_timeout=300  # 5 minutes
 
-    test_output=$(cd "$BUILDER_DIR" && timeout "$test_timeout" bash -c "$test_cmd" 2>&1) || test_exit=$?
+    # Use gtimeout (macOS coreutils) or timeout (Linux), fallback to plain execution
+    local timeout_bin=""
+    if command -v gtimeout &>/dev/null; then
+        timeout_bin="gtimeout"
+    elif command -v timeout &>/dev/null; then
+        timeout_bin="timeout"
+    fi
+
+    if [[ -n "$timeout_bin" ]]; then
+        test_output=$(cd "$BUILDER_DIR" && "$timeout_bin" "$test_timeout" bash -c "$test_cmd" 2>&1) || test_exit=$?
+    else
+        test_output=$(cd "$BUILDER_DIR" && bash -c "$test_cmd" 2>&1) || test_exit=$?
+    fi
 
     if [[ "$test_exit" -eq 124 ]]; then
         log "WARN" "Gate 5: TIMEOUT after ${test_timeout}s"
@@ -658,7 +670,7 @@ run_gate_6() {
 # Main execution
 # ---------------------------------------------------------------------------
 
-log "INFO" "Stage 6 started — Deterministic Enforcement Gates"
+log "INFO" "Stage 10 started — Deterministic Enforcement Gates"
 log "INFO" "Builder dir: $BUILDER_DIR"
 log "INFO" "Output dir: $OUTPUT_DIR"
 if [[ ${#SKIP_GATES[@]} -gt 0 ]]; then
@@ -684,7 +696,7 @@ done
 # Write the final report
 write_report
 
-log "INFO" "Stage 6 completed — overall result: $OVERALL_RESULT"
+log "INFO" "Stage 10 completed — overall result: $OVERALL_RESULT"
 log "INFO" "Report written to $REPORT_FILE"
 
 # Exit with failure if any gate failed

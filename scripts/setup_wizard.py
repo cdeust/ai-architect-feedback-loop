@@ -295,7 +295,27 @@ def generate_category_mappings(modules):
 
 
 def validate_license(key_file):
-    """Validate license key against Polar API."""
+    """Validate license key against Polar API.
+
+    Delegates to license.py for the actual validation logic. Falls back to
+    inline implementation if import fails.
+    """
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        sys.path.insert(0, script_dir)
+        from license import validate_license as _validate
+        tier, msg = _validate(key_file)
+        # Map tier back to setup_wizard's expected format
+        if tier == "pro":
+            return "granted", msg
+        elif tier == "free":
+            return None, msg
+        else:
+            return None, msg
+    except ImportError:
+        pass
+
+    # Fallback: inline validation (legacy)
     expanded = os.path.expanduser(key_file)
     if not os.path.isfile(expanded):
         return None, "Key file not found"
@@ -306,7 +326,6 @@ def validate_license(key_file):
     if not key:
         return None, "Key file is empty"
 
-    # Try sandbox first, then production
     endpoints = [
         ("sandbox-api.polar.sh", "33bddceb-c04b-40f7-a881-54402f1ddd4f"),
         ("api.polar.sh", "3c29257d-7ddb-4ef1-98d4-3d63c491d653"),
@@ -407,7 +426,7 @@ def run_wizard(builder_dir=None, output_path=None, non_interactive=False):
                     else:
                         print(f"  License: {yellow(detail)}")
             else:
-                print("  License is needed for Stage 4 (PRD generation).")
+                print("  License is needed for Stage 5 (PRD generation).")
                 print("  Get one at: https://polar.sh/ai-architect")
                 print("  You can add it later by editing pipeline.yml.")
 
@@ -603,13 +622,13 @@ def run_wizard(builder_dir=None, output_path=None, non_interactive=False):
                 ],
             },
             "stage_2": {"compound_score_minimum": 0.3, "engines_affected_minimum": 2},
-            "stage_4": {"prd_quality_minimum": 0.85},
-            "stage_6": {
+            "stage_5": {"prd_quality_minimum": 0.85},
+            "stage_10": {
                 "prohibited_patterns_file": "config/prohibited_patterns.txt",
                 "orphan_detection_extensions": "from_project_config",
                 "orphan_detection_exclude_dirs": [".build", ".git", "runs", "logs", "benchmarks"],
             },
-            "stage_8": {
+            "stage_12": {
                 "regression_threshold": 0.05,
                 "dimensions": ["completeness", "accuracy", "consistency", "actionability"],
             },
@@ -643,13 +662,13 @@ def run_wizard(builder_dir=None, output_path=None, non_interactive=False):
                     ],
                 },
                 "stage_2": {"compound_score_minimum": 0.3, "engines_affected_minimum": 2},
-                "stage_4": {"prd_quality_minimum": 0.85},
-                "stage_6": {
+                "stage_5": {"prd_quality_minimum": 0.85},
+                "stage_10": {
                     "prohibited_patterns_file": "config/prohibited_patterns.txt",
                     "orphan_detection_extensions": "from_project_config",
                     "orphan_detection_exclude_dirs": [".build", ".git", "runs", "logs", "benchmarks"],
                 },
-                "stage_8": {
+                "stage_12": {
                     "regression_threshold": 0.05,
                     "dimensions": ["completeness", "accuracy", "consistency", "actionability"],
                 },
@@ -664,8 +683,8 @@ def run_wizard(builder_dir=None, output_path=None, non_interactive=False):
             min_relevance = float(ask("Stage 1 — minimum relevance score (0.0-1.0)", "0.5"))
             min_compound = float(ask("Stage 2 — minimum compound score (0.0-1.0)", "0.3"))
             min_engines = int(ask("Stage 2 — minimum engines affected", "2"))
-            prd_quality = float(ask("Stage 4 — PRD quality minimum (0.0-1.0)", "0.85"))
-            regression = float(ask("Stage 8 — regression threshold (0.0-1.0)", "0.05"))
+            prd_quality = float(ask("Stage 5 — PRD quality minimum (0.0-1.0)", "0.85"))
+            regression = float(ask("Stage 12 — regression threshold (0.0-1.0)", "0.05"))
             max_retries = int(ask("Max retry attempts", "3"))
 
             config["thresholds"] = {
@@ -682,13 +701,13 @@ def run_wizard(builder_dir=None, output_path=None, non_interactive=False):
                     "compound_score_minimum": min_compound,
                     "engines_affected_minimum": min_engines,
                 },
-                "stage_4": {"prd_quality_minimum": prd_quality},
-                "stage_6": {
+                "stage_5": {"prd_quality_minimum": prd_quality},
+                "stage_10": {
                     "prohibited_patterns_file": "config/prohibited_patterns.txt",
                     "orphan_detection_extensions": "from_project_config",
                     "orphan_detection_exclude_dirs": [".build", ".git", "runs", "logs", "benchmarks"],
                 },
-                "stage_8": {
+                "stage_12": {
                     "regression_threshold": regression,
                     "dimensions": ["completeness", "accuracy", "consistency", "actionability"],
                 },

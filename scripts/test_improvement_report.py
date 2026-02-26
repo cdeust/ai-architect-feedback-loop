@@ -6,7 +6,7 @@ Tests:
     UT-E5-IR1: engines_improved maps findings -> ports
     UT-E5-IR2: engines_unaffected lists untouched engines
     UT-E5-IR3: quality_impact includes baseline comparison
-    UT-E5-IR4: pr_urls collected from stage10 summaries
+    UT-E5-IR4: pr_urls collected from stage14 summaries
     UT-E5-IR5: failed_findings includes issue URLs
     UT-E5-IR6: Markdown report has engine table
     UT-E5-IR7: Handles missing optional files gracefully
@@ -104,9 +104,9 @@ class TestImprovementReport(unittest.TestCase):
             {"finding_id": "tv-001", "result": "ACCEPTED", "attempts": 1},
         )
 
-        # Stage 10 PR
+        # Stage 14 PR
         self._write_json(
-            os.path.join(self.run_dir, "stage10_summary_tv-001.json"),
+            os.path.join(self.run_dir, "stage14_summary_tv-001.json"),
             {"finding_id": "tv-001", "pr_url": "https://github.com/test/repo/pull/42"},
         )
 
@@ -189,15 +189,15 @@ class TestImprovementReport(unittest.TestCase):
         self.assertEqual(quality["dimensions"]["completeness"]["baseline"], 0.91)
         self.assertEqual(quality["dimensions"]["completeness"]["current"], 0.92)
 
-    # UT-E5-IR4: pr_urls collected from stage10 summaries
-    def test_pr_urls_collected_from_stage10(self):
-        """All PR URLs should be collected from stage10_summary files."""
+    # UT-E5-IR4: pr_urls collected from stage14 summaries
+    def test_pr_urls_collected_from_stage14(self):
+        """All PR URLs should be collected from stage14_summary files."""
         self._write_json(
-            os.path.join(self.run_dir, "stage10_summary_tv-001.json"),
+            os.path.join(self.run_dir, "stage14_summary_tv-001.json"),
             {"pr_url": "https://github.com/test/repo/pull/42"},
         )
         self._write_json(
-            os.path.join(self.run_dir, "stage10_summary_tv-003.json"),
+            os.path.join(self.run_dir, "stage14_summary_tv-003.json"),
             {"pr_url": "https://github.com/test/repo/pull/43"},
         )
 
@@ -216,7 +216,7 @@ class TestImprovementReport(unittest.TestCase):
                 "finding_id": "tv-002",
                 "result": "EXHAUSTED",
                 "category": "verification",
-                "failed_stage": "stage_7",
+                "failed_stage": "stage_11",
                 "attempts": 3,
                 "issue_url": "https://github.com/test/repo/issues/99",
             },

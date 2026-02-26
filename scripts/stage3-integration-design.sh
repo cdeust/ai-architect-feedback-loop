@@ -49,6 +49,9 @@ run_with_timeout() {
 # Source shared AI invocation helper
 source "$SCRIPT_DIR/ai_invoke.sh"
 
+# Source artifact path helpers
+source "$SCRIPT_DIR/artifact_paths.sh"
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -193,7 +196,15 @@ log "INFO" "Contracts extracted"
 # ---------------------------------------------------------------------------
 
 ACCEPTED_FINDINGS=()
-for validation_file in "$IMPACT_DIR"/validation_stage2_*.json; do
+# Scan new layout (findings/$FID/stage2-validation.json) and old layout (validation_stage2_*.json)
+_scan_validation_files=()
+for vf in "$IMPACT_DIR"/findings/*/stage2-validation.json; do
+    [[ -f "$vf" ]] && _scan_validation_files+=("$vf")
+done
+for vf in "$IMPACT_DIR"/validation_stage2_*.json; do
+    [[ -f "$vf" ]] && _scan_validation_files+=("$vf")
+done
+for validation_file in "${_scan_validation_files[@]}"; do
     [[ ! -f "$validation_file" ]] && continue
 
     RESULT=$(python3 -c "import json; print(json.load(open('$validation_file')).get('result', ''))" 2>/dev/null || echo "")
@@ -204,7 +215,12 @@ for validation_file in "$IMPACT_DIR"/validation_stage2_*.json; do
             if [[ -n "$FINDING_ID_FILTER" && "$FINDING_ID" != "$FINDING_ID_FILTER" ]]; then
                 continue
             fi
-            ACCEPTED_FINDINGS+=("$FINDING_ID")
+            # Avoid duplicates from both scan paths
+            local already=false
+            for existing in "${ACCEPTED_FINDINGS[@]+"${ACCEPTED_FINDINGS[@]}"}"; do
+                [[ "$existing" == "$FINDING_ID" ]] && already=true && break
+            done
+            [[ "$already" == "false" ]] && ACCEPTED_FINDINGS+=("$FINDING_ID")
         fi
     fi
 done
@@ -268,7 +284,7 @@ PYEOF
 for FINDING_ID in "${ACCEPTED_FINDINGS[@]}"; do
     log "INFO" "Processing finding: $FINDING_ID"
 
-    IMPACT_REPORT="$IMPACT_DIR/impact_report_${FINDING_ID}.json"
+    IMPACT_REPORT=$(artifact_impact "$IMPACT_DIR" "$FINDING_ID")
     if [[ ! -f "$IMPACT_REPORT" ]]; then
         log "WARN" "Impact report not found: $IMPACT_REPORT — skipping"
         FAILED_COUNT=$((FAILED_COUNT + 1))
@@ -374,7 +390,7 @@ PYEOF
     fi
 
     # Extract JSON from Claude output
-    PLAN_FILE="$OUTPUT_DIR/integration_plan_${FINDING_ID}.json"
+    PLAN_FILE=$(artifact_integration "$OUTPUT_DIR" "$FINDING_ID")
     EXTRACT_EXIT=0
     python3 - "$RAW_OUTPUT" "$PLAN_FILE" <<'PYEOF' || EXTRACT_EXIT=$?
 import json, sys
@@ -426,7 +442,7 @@ PYEOF
     fi
 
     # Validate integration plan
-    VALIDATION_FILE="$OUTPUT_DIR/validation_stage3_${FINDING_ID}.json"
+    VALIDATION_FILE=$(artifact_validation3 "$OUTPUT_DIR" "$FINDING_ID")
     VALIDATE_EXIT=0
 
     python3 "$SCRIPT_DIR/validate_integration_plan.py" \
@@ -442,7 +458,7 @@ PYEOF
 
         # Generate manifest
         ENGINE_GRAPH_PATH="$SCRIPT_DIR/../config/engine_graph.json"
-        MANIFEST_FILE="$OUTPUT_DIR/manifest_${FINDING_ID}.json"
+        MANIFEST_FILE=$(artifact_manifest "$OUTPUT_DIR" "$FINDING_ID")
 
         python3 "$SCRIPT_DIR/generate_manifest.py" \
             --plan "$PLAN_FILE" \

@@ -1,6 +1,6 @@
 # /run-pipeline — Fully Autonomous Product Improvement Cycle
 
-Execute the full 10-stage feedback-loop pipeline. You are the orchestrator.
+Execute the full 14-stage feedback-loop pipeline. You are the orchestrator.
 **NEVER** ask the user anything. **NEVER** use AskUserQuestion. **NEVER** stop for confirmation.
 If a step fails, log it and continue. Report everything at the end.
 
@@ -89,26 +89,25 @@ Print: `[PASS] Step 0.0: Working branches created — pipeline/run-<RUN_TS>`
 
 ## Step 0.1: License (one-time check)
 
-Check if a license key exists. If it does, validate it **once** here. The result applies to the entire run — no further license checks needed (including when invoking the ai-prd-generator skill).
+Determine the license tier. The result applies to the entire run — no further license checks needed (including when invoking the ai-prd-generator skill). Save the result as `LICENSE_TIER`.
 
-Use `LICENSE_KEY_FILE` from pipeline preferences (default: `~/.aiprd/license-key`). If `VALIDATE_LICENSE` is `false`, skip this entire step and print `[SKIP] Step 0.1: License validation disabled`.
-
-```bash
-test -f <LICENSE_KEY_FILE> && echo "KEY_EXISTS" || echo "NO_KEY"
-```
-
-- If `NO_KEY`: print `[FAIL] License key not found at <LICENSE_KEY_FILE>` and **stop entirely**.
-- If `KEY_EXISTS`: validate once:
+Use `LICENSE_KEY_FILE` from pipeline preferences (default: `~/.aiprd/license-key`). If `VALIDATE_LICENSE` is `false`, skip this entire step and print `[SKIP] Step 0.1: License validation disabled`. Set `LICENSE_TIER=pro` (assume valid).
 
 ```bash
-KEY=$(cat ~/.aiprd/license-key 2>/dev/null) && curl -sf -X POST 'https://sandbox-api.polar.sh/v1/customer-portal/license-keys/validate' -H 'Content-Type: application/json' -d "{\"key\":\"$KEY\",\"organization_id\":\"33bddceb-c04b-40f7-a881-54402f1ddd4f\"}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['status']=='granted'; print('granted')"
+python3 "<SCRIPTS>/license.py" --check --key-file "<LICENSE_KEY_FILE>" 2>&1
 ```
 
-If this fails, try production org `3c29257d-7ddb-4ef1-98d4-3d63c491d653` at `api.polar.sh`. If both fail: print `[FAIL] License invalid` and **stop entirely**.
+The script returns the tier (`pro` or `free`) on stdout, exits 0. Only exits 1 if the key is provably invalid (exists but rejected by the API).
 
-Print: `[PASS] Step 0.1: License validated — granted`
+- If exit 0 and output is `pro`: set `LICENSE_TIER=pro`. Print `[PASS] Step 0.1: License validated — pro tier`
+- If exit 0 and output is `free`: set `LICENSE_TIER=free`. Print `[INFO] Step 0.1: No license — using free tier`
+- If exit 1: print `[FAIL] Step 0.1: License invalid` and **stop entirely**.
 
-**License is now validated for this run. Do NOT re-validate at any later step.** When the ai-prd-generator skill runs its own license gate, skip it — the license is already confirmed.
+**License tier is now set for this run. Do NOT re-validate at any later step.** When the ai-prd-generator skill runs its own license gate, skip it — the license is already confirmed.
+
+Stage 5 behavior adapts based on `LICENSE_TIER`:
+- `pro`: Full skill invocation with all 11 sections
+- `free`: Simplified PRD generation (5 core sections: Overview, Requirements, Design, Testing, Constraints; no JIRA export, no verification scoring)
 
 ## Step 0.2: Detect existing PRs
 
@@ -171,7 +170,7 @@ If a finding exhausts all retry attempts at any stage, skip it and move to the n
 
 **Run 1** — assembles prompt, exits 42:
 ```bash
-rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage2_<FID>.json" "<RUN>/response_stage2_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage2-impact-analysis.sh" --findings "<RUN>/prioritized_findings.json" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --packages-dir "<PACKAGES_DIR>" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
+mkdir -p "<RUN>/findings/<FID>" && rm -f "<RUN>/pending_stage.json" "<RUN>/findings/<FID>/response_stage2.json" "<RUN>/findings/<FID>/response_stage2.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage2-impact-analysis.sh" --findings "<RUN>/prioritized_findings.json" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --packages-dir "<PACKAGES_DIR>" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
 ```
 
 Exit code 42 is expected (means prompt is ready). Read `<RUN>/pending_stage.json` with Read tool. Then read the prompt file from the `prompt_file` field.
@@ -181,7 +180,7 @@ Exit code 42 is expected (means prompt is ready). Read `<RUN>/pending_stage.json
 2. Identify affected engines for this finding's category
 3. Trace propagation paths through dependency graph
 4. Read relevant protocol files in `<PACKAGES_DIR>/` to assess contract impact
-5. On retry: read the previous validation failure from `<RUN>/validation_stage2_<FID>.json` and fix the specific issues
+5. On retry: read the previous validation failure from `<RUN>/findings/<FID>/stage2-validation.json` and fix the specific issues
 6. Write response JSON to the `expected_response` path from the descriptor
 
 Response format:
@@ -218,7 +217,7 @@ Compute the score BEFORE writing. Do NOT edit the file after writing.
 **Run 2** — re-run same command (response file now exists, script validates):
 Same bash command as Run 1 but without `rm -f` of response files. Keep the `echo "EXIT:$?"` suffix. **Non-zero exit codes are normal for REJECTED results — always read the validation JSON.**
 
-Read `<RUN>/validation_stage2_<FID>.json`:
+Read `<RUN>/findings/<FID>/stage2-validation.json`:
 - If ACCEPTED: `[PASS] Step 2.1: Stage 2 accepted (attempt N)` — proceed.
 - If REJECTED: Read the `reason` field. `[RETRY] Step 2.1: Stage 2 rejected — <reason>`. Loop to next attempt.
 
@@ -240,7 +239,7 @@ Read `<RUN>/contracts.json` — it contains the real protocol/port names per eng
 
 **Run 1:**
 ```bash
-rm -f "<RUN>/pending_stage.json" "<RUN>/response_stage3_<FID>.json" "<RUN>/response_stage3_<FID>.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage3-integration-design.sh" --impact-dir "<RUN>" --packages-dir "<PACKAGES_DIR>" --claude-md "<BUILDER>/CLAUDE.md" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
+rm -f "<RUN>/pending_stage.json" "<RUN>/findings/<FID>/response_stage3.json" "<RUN>/findings/<FID>/response_stage3.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage3-integration-design.sh" --impact-dir "<RUN>" --packages-dir "<PACKAGES_DIR>" --claude-md "<BUILDER>/CLAUDE.md" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
 ```
 
 (If `<BUILDER>/CLAUDE.md` doesn't exist, pass `--claude-md /dev/null` instead.)
@@ -252,7 +251,7 @@ Read descriptor + prompt. Design the integration:
 4. Plan per-engine modifications — every `affected_engine` MUST have modifications
 5. All file paths MUST exist (verify with Glob)
 6. Identify cross-engine touchpoints
-7. On retry: read `<RUN>/validation_stage3_<FID>.json` and fix the specific failed checks
+7. On retry: read `<RUN>/findings/<FID>/stage3-validation.json` and fix the specific failed checks
 
 Response format:
 ```json
@@ -286,13 +285,13 @@ Compute the full response BEFORE writing. Do NOT edit the file after writing.
 
 **Run 2** — re-run same command but without `rm -f` of response files. Keep the `echo "EXIT:$?"` suffix. **Non-zero exit codes are normal for REJECTED results — always read the validation JSON.**
 
-Read `<RUN>/validation_stage3_<FID>.json`:
+Read `<RUN>/findings/<FID>/stage3-validation.json`:
 - If ACCEPTED: `[PASS] Step 2.3: Stage 3 accepted (attempt N)` — proceed.
 - If REJECTED: Read the `checks` array, collect failed checks with reasons. `[RETRY] Step 2.3: Stage 3 rejected — <failed checks>`. Loop to next attempt.
 
 After 3 failures: `[FAIL] Step 2.3: Stage 3 exhausted` — skip this finding.
 
-### Step 2.4: Stage 4 — PRD Generation (skill invocation, max 3 attempts)
+### Step 2.4: Stage 5 — PRD Generation (skill invocation, max 3 attempts)
 
 **Compose PRD input** (once, before the retry loop):
 ```bash
@@ -300,10 +299,10 @@ python3 "<SCRIPTS>/extract_contracts.py" --packages-dir "<PACKAGES_DIR>" --forma
 ```
 
 ```bash
-python3 "<SCRIPTS>/compose_prd_input.py" --impact-report "<RUN>/impact_report_<FID>.json" --integration-plan "<RUN>/integration_plan_<FID>.json" --contracts-md "<RUN>/contracts_<FID>.md" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --output "<RUN>/prd_input_<FID>.md" 2>&1
+python3 "<SCRIPTS>/compose_prd_input.py" --impact-report "<RUN>/findings/<FID>/stage2-impact.json" --integration-plan "<RUN>/findings/<FID>/stage3-integration.json" --contracts-md "<RUN>/contracts_<FID>.md" --engine-graph "<CONFIG>/engine_graph.json" --category-map "<CONFIG>/category_engine_map.json" --output "<RUN>/prd_input_<FID>.md" 2>&1
 ```
 
-(Add `--manifest "<RUN>/manifest_<FID>.json"` if that file exists.)
+(Add `--manifest "<RUN>/findings/<FID>/stage3-manifest.json"` if that file exists.)
 
 **Read** `<RUN>/prd_input_<FID>.md`.
 
@@ -313,7 +312,7 @@ python3 "<SCRIPTS>/compose_prd_input.py" --impact-report "<RUN>/impact_report_<F
 
 Remove previous PRD output if retrying:
 ```bash
-rm -rf "<RUN>/prd_output_<FID>" && rm -f "<BUILDER>/prd.md" "<BUILDER>/prd-verification.md" "<BUILDER>/prd-jira.md" "<BUILDER>/prd-tests.md"
+rm -rf "<RUN>/findings/<FID>/stage5-prd" && rm -f "<BUILDER>/prd.md" "<BUILDER>/prd-verification.md" "<BUILDER>/prd-jira.md" "<BUILDER>/prd-tests.md"
 ```
 
 **BEFORE calling the skill**, determine the scope from the pipeline artifacts:
@@ -357,23 +356,23 @@ All other checks passed — do NOT regress on those. Focus only on fixing the fa
 
 **2.3b: Collect output**
 ```bash
-mkdir -p "<RUN>/prd_output_<FID>" && for f in prd.md prd-verification.md prd-jira.md prd-tests.md; do [ -f "<BUILDER>/$f" ] && mv "<BUILDER>/$f" "<RUN>/prd_output_<FID>/"; done
+mkdir -p "<RUN>/findings/<FID>/stage5-prd" && for f in prd.md prd-verification.md prd-jira.md prd-tests.md; do [ -f "<BUILDER>/$f" ] && mv "<BUILDER>/$f" "<RUN>/findings/<FID>/stage5-prd/"; done
 ```
 
 **2.3c: Validate**
 ```bash
-python3 "<SCRIPTS>/extract_prd_metrics.py" --prd "<RUN>/prd_output_<FID>/prd.md" --verification "<RUN>/prd_output_<FID>/prd-verification.md" --tests "<RUN>/prd_output_<FID>/prd-tests.md" --output "<RUN>/prd_output_<FID>/metrics.json" 2>&1
+python3 "<SCRIPTS>/extract_prd_metrics.py" --prd "<RUN>/findings/<FID>/stage5-prd/prd.md" --verification "<RUN>/findings/<FID>/stage5-prd/prd-verification.md" --tests "<RUN>/findings/<FID>/stage5-prd/prd-tests.md" --output "<RUN>/findings/<FID>/stage5-prd/metrics.json" 2>&1
 ```
 
 ```bash
-python3 "<SCRIPTS>/validate_prd_output.py" --prd-dir "<RUN>/prd_output_<FID>" --integration-plan "<RUN>/integration_plan_<FID>.json" --engine-graph "<CONFIG>/engine_graph.json" --metrics "<RUN>/prd_output_<FID>/metrics.json" --config "<CONFIG>/thresholds.json" --output "<RUN>/validation_stage4_<FID>.json" 2>&1; true
+python3 "<SCRIPTS>/validate_prd_output.py" --prd-dir "<RUN>/findings/<FID>/stage5-prd" --integration-plan "<RUN>/findings/<FID>/stage3-integration.json" --engine-graph "<CONFIG>/engine_graph.json" --metrics "<RUN>/findings/<FID>/stage5-prd/metrics.json" --config "<CONFIG>/thresholds.json" --output "<RUN>/findings/<FID>/stage5-validation.json" 2>&1; true
 ```
 
-Read `<RUN>/validation_stage4_<FID>.json`:
-- If ACCEPTED: `[PASS] Step 2.4: Stage 4 accepted (attempt N)` — proceed to Phase 3.
-- If REJECTED: Read the `checks` array, collect all entries where `result` == `"FAIL"` (extract `check` name and `reason`). Print `[RETRY] Step 2.4: Stage 4 rejected — <failed checks>`. Loop to next attempt with the failure context prepended.
+Read `<RUN>/findings/<FID>/stage5-validation.json`:
+- If ACCEPTED: `[PASS] Step 2.4: Stage 5 accepted (attempt N)` — proceed to Phase 3.
+- If REJECTED: Read the `checks` array, collect all entries where `result` == `"FAIL"` (extract `check` name and `reason`). Print `[RETRY] Step 2.4: Stage 5 rejected — <failed checks>`. Loop to next attempt with the failure context prepended.
 
-After 3 failures: `[FAIL] Step 2.4: Stage 4 exhausted (3 attempts)` — skip this finding.
+After 3 failures: `[FAIL] Step 2.4: Stage 5 exhausted (3 attempts)` — skip this finding.
 
 ---
 
@@ -381,23 +380,29 @@ After 3 failures: `[FAIL] Step 2.4: Stage 4 exhausted (3 attempts)` — skip thi
 
 For each finding that passed Phase 2:
 
-### Step 3.1: Stage 5 — Implement
+### Step 3.1: Stage 7 — Implement
 
 For attempt 1 to 3:
 
 **Run 1** — get prompt:
 ```bash
-rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage5-implementation.sh" --run-dir "<RUN>" --builder-dir "<BUILDER>" --engine-graph "<CONFIG>/engine_graph.json" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
+rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage7-implementation.sh" --run-dir "<RUN>" --builder-dir "<BUILDER>" --engine-graph "<CONFIG>/engine_graph.json" --config "<CONFIG>/thresholds.json" --output "<RUN>" --finding-id "<FID>" 2>&1; echo "EXIT:$?"
 ```
 
-(On retry attempts > 1, add `--failure-context "<RUN>/attempt_N_<FID>/failure_context.md"` if it exists.)
+(On retry attempts > 1, add `--failure-context "<RUN>/findings/<FID>/attempts/N/failure_context.md"` if it exists.)
 
 Read descriptor + prompt. Then **implement directly**:
 
 1. Ensure builder is on the run branch: `git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" 2>/dev/null`
 2. Create feature branch from run branch: `git -C "<BUILDER>" checkout -b "pipeline/improvement-<FID>" 2>/dev/null || git -C "<BUILDER>" checkout "pipeline/improvement-<FID>"`
 3. Read the PRD + integration plan
-4. For each modification in the plan: Read the file, Edit it
+4. **Decompose into work units:** Read the integration plan's `modifications[]` array. Group by engine — each engine's modifications become one work unit. For each work unit:
+   - Identify the files to modify
+   - Extract the relevant PRD sections for that engine
+   - Implement the file changes (Read file, Edit it)
+   - Commit per-engine changes separately for reviewability
+5. After all work units: verify the full diff against the PRD (reviewer step — check cross-engine consistency)
+6. For each modification in the plan: Read the file, Edit it (if not already done via work unit decomposition)
 5. Build: Use `BUILD_CMD` (read from `project.json` in Step 0), run in BUILDER:
    ```bash
    cd "<BUILDER>" && eval "<BUILD_CMD>"
@@ -414,18 +419,18 @@ Read descriptor + prompt. Then **implement directly**:
 
 7. Only after build AND tests pass:
    Commit using `COMMIT_MESSAGE` pattern (replace `{finding_id}` with `<FID>`, `{description}` with a brief description): `git -C "<BUILDER>" add -A && git -C "<BUILDER>" commit -m "<COMMIT_MESSAGE>"`
-8. Write response: `echo '{"status":"implemented"}' > "<RUN>/response_stage5_<FID>.json"`
+8. Write response: `echo '{"status":"implemented"}' > "<RUN>/findings/<FID>/response_stage7.json"`
 
-**CRITICAL: Build and test failures are NOT stage failures — they are implementation bugs you must fix before proceeding. Only move to retry (next attempt) if Run 2 validation rejects, or if Stage 6/7 rejects. Never skip a finding because of a build error.**
+**CRITICAL: Build and test failures are NOT stage failures — they are implementation bugs you must fix before proceeding. Only move to retry (next attempt) if Run 2 validation rejects, or if Stage 10/11 rejects. Never skip a finding because of a build error.**
 
 **Run 2** — validate:
 Before re-running, ensure builder is on the **run branch** so the script can detect commits on the feature branch:
 ```bash
 git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" 2>/dev/null
 ```
-Then re-run stage5 command (same as Run 1 without rm). Read `<RUN>/stage5_summary.json`. If not ACCEPTED: go to retry.
+Then re-run stage7 command (same as Run 1 without rm). Read `<RUN>/stage7_summary.json`. If not ACCEPTED: go to retry.
 
-### Step 3.2: Stage 6 — Gates
+### Step 3.2: Stage 10 — Gates
 
 Run in the **foreground** with a 10-minute timeout (`timeout: 600000`). Do NOT use `run_in_background`.
 
@@ -435,7 +440,7 @@ Skip gates 2, 5, and 6:
 - Gate 6: deployment integrity (checked separately in Step 4.2)
 
 ```bash
-git -C "<BUILDER>" checkout "pipeline/improvement-<FID>" && "<SCRIPTS>/stage6-gates.sh" --builder-dir "<BUILDER>" --config "<CONFIG>/thresholds.json" --patterns "<CONFIG>/prohibited_patterns.txt" --output "<RUN>" --skip-gate 2 --skip-gate 5 --skip-gate 6 2>&1; echo "EXIT:$?"
+git -C "<BUILDER>" checkout "pipeline/improvement-<FID>" && "<SCRIPTS>/stage10-gates.sh" --builder-dir "<BUILDER>" --config "<CONFIG>/thresholds.json" --patterns "<CONFIG>/prohibited_patterns.txt" --output "<RUN>" --skip-gate 2 --skip-gate 5 --skip-gate 6 2>&1; echo "EXIT:$?"
 ```
 
 ```bash
@@ -444,11 +449,11 @@ git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>"
 
 Read `<RUN>/enforcement_report.json`. If the file doesn't exist (script crashed/timed out), write a manual report based on what gates completed and proceed. If result is FAIL on Gates 1, 3, or 4: go to retry.
 
-### Step 3.3: Stage 7 — Verification (double-run)
+### Step 3.3: Stage 11 — Verification (double-run)
 
 **Run 1:**
 ```bash
-rm -f "<RUN>/pending_stage.json" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage7-semantic-verification.sh" --run-dir "<RUN>" --builder-dir "<BUILDER>" --engine-graph "<CONFIG>/engine_graph.json" --config "<CONFIG>/thresholds.json" --patterns "<CONFIG>/prohibited_patterns.txt" --finding-id "<FID>" --branch "pipeline/improvement-<FID>" --output "<RUN>" 2>&1; echo "EXIT:$?"
+rm -f "<RUN>/pending_stage.json" "<RUN>/findings/<FID>/response_stage11.json" "<RUN>/findings/<FID>/response_stage11.txt" && PIPELINE_AUTO_MODE=1 OUTPUT_DIR="<RUN>" "<SCRIPTS>/stage11-semantic-verification.sh" --run-dir "<RUN>" --builder-dir "<BUILDER>" --engine-graph "<CONFIG>/engine_graph.json" --config "<CONFIG>/thresholds.json" --patterns "<CONFIG>/prohibited_patterns.txt" --finding-id "<FID>" --branch "pipeline/improvement-<FID>" --output "<RUN>" 2>&1; echo "EXIT:$?"
 ```
 
 Read descriptor + prompt. Verify:
@@ -477,12 +482,12 @@ Compute all values BEFORE writing. Do NOT edit the file after writing.
 ```bash
 git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" 2>/dev/null
 ```
-Then re-run stage7 command (same as Run 1 without rm). Read `<RUN>/verification_stage7_<FID>.json`. If not PASS: go to retry.
+Then re-run stage11 command (same as Run 1 without rm). Read `<RUN>/findings/<FID>/stage11-verification.json`. If not PASS: go to retry.
 
 ### Step 3.4: Retry handling
 
 On failure at Step 3.1/3.2/3.3:
-1. Write `<RUN>/attempt_<next>_<FID>/failure_context.md` with what failed and why
+1. Write `<RUN>/findings/<FID>/attempts/<next>/failure_context.md` with what failed and why
 2. Delete branch: `git -C "<BUILDER>" checkout "pipeline/run-<RUN_TS>" && git -C "<BUILDER>" branch -D "pipeline/improvement-<FID>" 2>/dev/null || true`
 3. Loop to next attempt
 
@@ -499,13 +504,13 @@ All 3 stages passed: record finding + branch name. Return to run branch: `git -C
 ### Step 4.1: Benchmark (informational, non-blocking)
 
 ```bash
-"<SCRIPTS>/stage8-benchmark.sh" --config "<CONFIG>/thresholds.json" --baselines "<REPO>/benchmarks/baselines" --output "<RUN>" --mode compare --current-dir "<RUN>" 2>&1 || true
+"<SCRIPTS>/stage12-benchmark.sh" --config "<CONFIG>/thresholds.json" --baselines "<REPO>/benchmarks/baselines" --output "<RUN>" --mode compare --current-dir "<RUN>" 2>&1 || true
 ```
 
 ### Step 4.2: Deployment simulation (non-blocking)
 
 ```bash
-"<SCRIPTS>/stage9-deployment.sh" --builder-dir "<BUILDER>" --output "<RUN>" 2>&1 || true
+"<SCRIPTS>/stage13-deployment.sh" --builder-dir "<BUILDER>" --output "<RUN>" 2>&1 || true
 ```
 
 ### Step 4.3: PR creation (per successful finding)
@@ -513,7 +518,7 @@ All 3 stages passed: record finding + branch name. Return to run branch: `git -C
 For each passing finding:
 
 ```bash
-"<SCRIPTS>/stage10-pull-request.sh" --run-dir "<RUN>" --builder-dir "<BUILDER>" --engine-graph "<CONFIG>/engine_graph.json" --finding-id "<FID>" --branch "pipeline/improvement-<FID>" --output "<RUN>" 2>&1
+"<SCRIPTS>/stage14-pull-request.sh" --run-dir "<RUN>" --builder-dir "<BUILDER>" --engine-graph "<CONFIG>/engine_graph.json" --finding-id "<FID>" --branch "pipeline/improvement-<FID>" --output "<RUN>" 2>&1
 ```
 
 ### Step 4.4: Improvement report
@@ -534,7 +539,7 @@ Print this summary (fill in actual values):
 Findings analyzed: N
   [PASS] finding-1: PR https://github.com/...
   [PASS] finding-2: PR https://github.com/...
-  [FAIL] finding-3: Stage 5 build failure (3 attempts exhausted)
+  [FAIL] finding-3: Stage 7 build failure (3 attempts exhausted)
 
 Benchmark: PASS/FAIL
 Deployment: PASS/FAIL

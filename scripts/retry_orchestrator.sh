@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# retry_orchestrator.sh — Stage 5→6→7 Retry Loop (per finding)
+# retry_orchestrator.sh — Stage 7→10→11 Retry Loop (per finding)
 # ============================================================================
 #
 # Manages the implementation/enforcement/verification cycle with up to N
@@ -131,13 +131,22 @@ fi
 
 BRANCH_NAME="pipeline/improvement-${FINDING_ID}"
 
+# Source artifact path helpers
+source "$SCRIPT_DIR/artifact_paths.sh"
+
+# Progress event helper — writes to progress.jsonl in the run dir
+emit_progress() {
+    local stage="$1" status="$2"
+    echo "{\"fid\":\"$FINDING_ID\",\"stage\":$stage,\"status\":\"$status\",\"ts\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >> "$RUN_DIR/progress.jsonl"
+}
+
 log "INFO" "Retry orchestrator started — finding: $FINDING_ID, max_attempts: $MAX_ATTEMPTS"
 
 # ---------------------------------------------------------------------------
 # Retry state tracking
 # ---------------------------------------------------------------------------
 
-RETRY_STATE_FILE="$OUTPUT_DIR/retry_state_${FINDING_ID}.json"
+RETRY_STATE_FILE=$(artifact_retry_state "$OUTPUT_DIR" "$FINDING_ID")
 python3 -c "
 import json
 from datetime import datetime, timezone
@@ -219,9 +228,9 @@ for a in attempts:
     files = a.get("files_affected", [])
 
     stage_label = {
-        "stage_5": "Stage 5 (Implementation)",
-        "stage_6": "Stage 6 (Enforcement)",
-        "stage_7": "Stage 7 (Verification)"
+        "stage_7": "Stage 7 (Implementation)",
+        "stage_10": "Stage 10 (Enforcement)",
+        "stage_11": "Stage 11 (Verification)"
     }.get(stage, stage)
 
     lines.append(f"### Attempt {attempt_num} — Failed at {stage_label}")
@@ -262,7 +271,9 @@ PYEOF
 write_retry_summary() {
     local result="$1" attempt_count="$2" issue_url="${3:-}"
 
-    python3 - "$RETRY_STATE_FILE" "$OUTPUT_DIR/retry_summary_${FINDING_ID}.json" \
+    local _retry_summary
+    _retry_summary=$(artifact_retry_summary "$OUTPUT_DIR" "$FINDING_ID")
+    python3 - "$RETRY_STATE_FILE" "$_retry_summary" \
         "$result" "$attempt_count" "$BRANCH_NAME" "$MAX_ATTEMPTS" "$issue_url" <<'PYEOF'
 import json, sys
 from datetime import datetime, timezone
@@ -374,8 +385,7 @@ PYEOF
 for (( attempt=1; attempt<=MAX_ATTEMPTS; attempt++ )); do
     log "INFO" "=== Attempt $attempt of $MAX_ATTEMPTS ==="
 
-    ATTEMPT_DIR="$OUTPUT_DIR/attempt_${attempt}"
-    mkdir -p "$ATTEMPT_DIR"
+    ATTEMPT_DIR=$(artifact_attempt_dir "$OUTPUT_DIR" "$FINDING_ID" "$attempt")
 
     # ─── Branch lifecycle ───────────────────────────────────
     if [[ "$attempt" -gt 1 ]]; then
@@ -397,12 +407,13 @@ for (( attempt=1; attempt<=MAX_ATTEMPTS; attempt++ )); do
         FAILURE_CONTEXT_ARG="--failure-context $FAILURE_FILE"
     fi
 
-    # ─── Stage 5: Implementation (single-finding) ──────────
-    log "INFO" "Running Stage 5 for $FINDING_ID (attempt $attempt)"
+    # ─── Stage 7: Implementation (single-finding) ──────────
+    emit_progress 7 "start"
+    log "INFO" "Running Stage 7 for $FINDING_ID (attempt $attempt)"
 
-    S5_EXIT=0
+    S7_EXIT=0
     # shellcheck disable=SC2086
-    "$STAGES_DIR/stage5-implementation.sh" \
+    "$STAGES_DIR/stage7-implementation.sh" \
         --finding-id "$FINDING_ID" \
         $FAILURE_CONTEXT_ARG \
         --run-dir "$RUN_DIR" \
@@ -410,19 +421,19 @@ for (( attempt=1; attempt<=MAX_ATTEMPTS; attempt++ )); do
         --engine-graph "$ENGINE_GRAPH" \
         --config "$CONFIG_PATH" \
         --output "$ATTEMPT_DIR" \
-        2>&1 || S5_EXIT=$?
+        2>&1 || S7_EXIT=$?
 
-    if [[ "$S5_EXIT" -ne 0 ]]; then
-        log "WARN" "Stage 5 exited with $S5_EXIT"
+    if [[ "$S7_EXIT" -ne 0 ]]; then
+        log "WARN" "Stage 7 exited with $S7_EXIT"
     fi
 
-    # Check Stage 5 result from stage5_summary.json
-    S5_RESULT=""
-    S5_REASON=""
-    if [[ -f "$ATTEMPT_DIR/stage5_summary.json" ]]; then
-        S5_RESULT=$(python3 -c "
+    # Check Stage 7 result from stage7_summary.json
+    S7_RESULT=""
+    S7_REASON=""
+    if [[ -f "$ATTEMPT_DIR/stage7_summary.json" ]]; then
+        S7_RESULT=$(python3 -c "
 import json
-summary = json.load(open('$ATTEMPT_DIR/stage5_summary.json'))
+summary = json.load(open('$ATTEMPT_DIR/stage7_summary.json'))
 reports = summary.get('reports', [])
 for r in reports:
     if r.get('finding_id') == '$FINDING_ID':
@@ -432,9 +443,9 @@ else:
     print('FAILED')
 " 2>/dev/null || echo "FAILED")
 
-        S5_REASON=$(python3 -c "
+        S7_REASON=$(python3 -c "
 import json
-summary = json.load(open('$ATTEMPT_DIR/stage5_summary.json'))
+summary = json.load(open('$ATTEMPT_DIR/stage7_summary.json'))
 for r in summary.get('reports', []):
     if r.get('finding_id') == '$FINDING_ID':
         print(r.get('reason', ''))
@@ -442,37 +453,39 @@ for r in summary.get('reports', []):
 " 2>/dev/null || echo "")
     fi
 
-    if [[ "$S5_RESULT" != "ACCEPTED" ]]; then
-        log "WARN" "Stage 5 result: $S5_RESULT — ${S5_REASON:-unknown reason}"
-        record_attempt_failure "$attempt" "stage_5" "${S5_REASON:-Stage 5 did not accept implementation}"
+    if [[ "$S7_RESULT" != "ACCEPTED" ]]; then
+        log "WARN" "Stage 7 result: $S7_RESULT — ${S7_REASON:-unknown reason}"
+        record_attempt_failure "$attempt" "stage_7" "${S7_REASON:-Stage 7 did not accept implementation}"
         continue
     fi
 
-    log "INFO" "Stage 5 passed for $FINDING_ID"
+    log "INFO" "Stage 7 passed for $FINDING_ID"
+    emit_progress 7 "complete"
 
-    # ─── Stage 6: Enforcement gates ────────────────────────
-    log "INFO" "Running Stage 6 for $FINDING_ID (attempt $attempt)"
+    # ─── Stage 10: Enforcement gates ───────────────────────
+    emit_progress 10 "start"
+    log "INFO" "Running Stage 10 for $FINDING_ID (attempt $attempt)"
 
     # Checkout feature branch for gate evaluation
     git -C "$BUILDER_DIR" checkout "$BRANCH_NAME" 2>/dev/null || {
         log "ERROR" "Could not checkout $BRANCH_NAME"
-        record_attempt_failure "$attempt" "stage_6" "Could not checkout branch $BRANCH_NAME"
+        record_attempt_failure "$attempt" "stage_10" "Could not checkout branch $BRANCH_NAME"
         continue
     }
 
-    S6_EXIT=0
-    "$STAGES_DIR/stage6-gates.sh" \
+    S10_EXIT=0
+    "$STAGES_DIR/stage10-gates.sh" \
         --builder-dir "$BUILDER_DIR" \
         --config "$CONFIG_PATH" \
         --patterns "${PATTERNS_FILE:-}" \
         --skip-gate 2 \
         --output "$ATTEMPT_DIR" \
-        2>&1 || S6_EXIT=$?
+        2>&1 || S10_EXIT=$?
 
     # Return to base branch
     git -C "$BUILDER_DIR" checkout "$BASE_BRANCH" 2>/dev/null || true
 
-    if [[ "$S6_EXIT" -ne 0 ]]; then
+    if [[ "$S10_EXIT" -ne 0 ]]; then
         # Parse enforcement_report.json for failure details
         GATE_FAILURES=""
         if [[ -f "$ATTEMPT_DIR/enforcement_report.json" ]]; then
@@ -504,18 +517,20 @@ for g in report.get('gates', []):
 " 2>/dev/null || echo "")
         fi
 
-        log "WARN" "Stage 6 failed: $GATE_FAILURES"
-        record_attempt_failure "$attempt" "stage_6" "$GATE_FAILURES" "$FAILED_GATE"
+        log "WARN" "Stage 10 failed: $GATE_FAILURES"
+        record_attempt_failure "$attempt" "stage_10" "$GATE_FAILURES" "$FAILED_GATE"
         continue
     fi
 
-    log "INFO" "Stage 6 passed for $FINDING_ID"
+    log "INFO" "Stage 10 passed for $FINDING_ID"
+    emit_progress 10 "complete"
 
-    # ─── Stage 7: Semantic verification ────────────────────
-    log "INFO" "Running Stage 7 for $FINDING_ID (attempt $attempt)"
+    # ─── Stage 11: Semantic verification ───────────────────
+    emit_progress 11 "start"
+    log "INFO" "Running Stage 11 for $FINDING_ID (attempt $attempt)"
 
-    S7_EXIT=0
-    "$STAGES_DIR/stage7-semantic-verification.sh" \
+    S11_EXIT=0
+    "$STAGES_DIR/stage11-semantic-verification.sh" \
         --run-dir "$RUN_DIR" \
         --builder-dir "$BUILDER_DIR" \
         --engine-graph "$ENGINE_GRAPH" \
@@ -524,15 +539,17 @@ for g in report.get('gates', []):
         --finding-id "$FINDING_ID" \
         --branch "$BRANCH_NAME" \
         --output "$ATTEMPT_DIR" \
-        2>&1 || S7_EXIT=$?
+        2>&1 || S11_EXIT=$?
 
-    if [[ "$S7_EXIT" -ne 0 ]]; then
+    if [[ "$S11_EXIT" -ne 0 ]]; then
         # Parse verification findings
         VERIFICATION_FAILURES=""
-        if [[ -f "$ATTEMPT_DIR/verification_stage7_${FINDING_ID}.json" ]]; then
+        local _verif_file
+        _verif_file=$(artifact_verification11 "$ATTEMPT_DIR" "$FINDING_ID")
+        if [[ -f "$_verif_file" ]]; then
             VERIFICATION_FAILURES=$(python3 -c "
 import json
-result = json.load(open('$ATTEMPT_DIR/verification_stage7_${FINDING_ID}.json'))
+result = json.load(open('$_verif_file'))
 findings = result.get('findings', [])
 lines = []
 for f in findings:
@@ -545,15 +562,16 @@ print('; '.join(lines) if lines else 'Semantic verification failed')
 " 2>/dev/null || echo "Semantic verification failed")
         fi
 
-        log "WARN" "Stage 7 failed: $VERIFICATION_FAILURES"
-        record_attempt_failure "$attempt" "stage_7" "$VERIFICATION_FAILURES"
+        log "WARN" "Stage 11 failed: $VERIFICATION_FAILURES"
+        record_attempt_failure "$attempt" "stage_11" "$VERIFICATION_FAILURES"
         continue
     fi
 
     # ─── SUCCESS ───────────────────────────────────────────
+    emit_progress 11 "complete"
     log "INFO" "All stages passed for $FINDING_ID on attempt $attempt"
     write_retry_summary "ACCEPTED" "$attempt"
-    log "INFO" "Retry summary written to $OUTPUT_DIR/retry_summary_${FINDING_ID}.json"
+    log "INFO" "Retry summary written to $(artifact_retry_summary "$OUTPUT_DIR" "$FINDING_ID")"
     exit 0
 done
 
@@ -564,6 +582,6 @@ ISSUE_URL=""
 ISSUE_URL=$(create_failure_issue) || true
 
 write_retry_summary "EXHAUSTED" "$MAX_ATTEMPTS" "$ISSUE_URL"
-log "INFO" "Retry summary written to $OUTPUT_DIR/retry_summary_${FINDING_ID}.json"
+log "INFO" "Retry summary written to $(artifact_retry_summary "$OUTPUT_DIR" "$FINDING_ID")"
 
 exit 1

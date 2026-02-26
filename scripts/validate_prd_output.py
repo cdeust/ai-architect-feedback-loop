@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stage 4 PRD Output Validator (PIPE-E3-004)
+Stage 5 PRD Output Validator (PIPE-E3-004)
 
 Deterministic structural validation of PRD output files. Validates against
 the product's actual PRD format (feature context = 11 sections) and engine
@@ -25,7 +25,7 @@ Usage:
         --engine-graph config/engine_graph.json \
         --metrics metrics_tv-001.json \
         --config config/thresholds.json \
-        --output validation_stage4_tv-001.json
+        --output validation_stage5_tv-001.json
 """
 
 import argparse
@@ -241,7 +241,8 @@ def check_architecture_in_tech_spec(prd_dir):
 
 def validate(prd_dir, integration_plan, engine_graph, metrics, config):
     """Run all validation checks. Returns (result, checks, finding_id)."""
-    threshold = config.get("stage_4", {}).get("prd_quality_minimum", 0.85)
+    threshold = config.get("stage_5", {}).get("prd_quality_minimum",
+                config.get("stage_4", {}).get("prd_quality_minimum", 0.85))
     affected_engines = integration_plan.get("affected_engines", []) if integration_plan else []
     finding_id = integration_plan.get("finding_id", "unknown") if integration_plan else "unknown"
 
@@ -270,7 +271,7 @@ def validate(prd_dir, integration_plan, engine_graph, metrics, config):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Validate Stage 4 PRD output against product constraints"
+        description="Validate Stage 5 PRD output against product constraints"
     )
     parser.add_argument(
         "--prd-dir", required=True,
@@ -311,7 +312,7 @@ def main(argv=None):
     metrics = load_json(args.metrics)
     config = load_json(args.config)
     if config is None:
-        config = {"stage_4": {"prd_quality_minimum": 0.85}}
+        config = {"stage_5": {"prd_quality_minimum": 0.85}}
 
     result, checks, finding_id = validate(
         args.prd_dir, integration_plan, engine_graph, metrics, config

@@ -59,7 +59,7 @@ project:
   # Shell command to run tests (run from project root).
   test_command: "make test"
 
-  # Shell command for deployment (optional — used by Stage 9).
+  # Shell command for deployment (optional — used by Stage 13).
   deploy_command: null
 
   # CLI tools required for the pipeline to run.
@@ -72,7 +72,7 @@ project:
 # -----------------------------------------------------------------------------
 # Section 2: license — AIPRD License
 # -----------------------------------------------------------------------------
-# The pipeline uses an AIPRD license for PRD generation (Stage 4).
+# The pipeline uses an AIPRD license for PRD generation (Stage 5).
 
 license:
   # Path to the license key file. The setup wizard creates this.
@@ -216,7 +216,7 @@ pipeline:
   # Max findings to process per run (after prioritization).
   top_n_findings: 20
 
-  # Max findings to actually implement (Stage 5 cap).
+  # Max findings to actually implement (Stage 7 cap).
   max_implementations: 5
 
   # Finding categories to exclude from processing.
@@ -231,8 +231,8 @@ pipeline:
   # Claude CLI max turns per stage type.
   claude_max_turns:
     analysis: 5        # Stages 2, 3 (impact, integration design)
-    implementation: 30  # Stage 5 (code implementation)
-    verification: 5     # Stage 7 (semantic verification)
+    implementation: 30  # Stage 7 (code implementation)
+    verification: 5     # Stage 11 (semantic verification)
 
   # Claude CLI timeout in seconds per stage type.
   claude_timeout:
@@ -287,12 +287,12 @@ thresholds:
     compound_score_minimum: 0.3
     engines_affected_minimum: 2
 
-  # Stage 4: PRD quality gate
-  stage_4:
+  # Stage 5: PRD quality gate
+  stage_5:
     prd_quality_minimum: 0.85
 
-  # Stage 6: Enforcement gates
-  stage_6:
+  # Stage 10: Enforcement gates
+  stage_10:
     prohibited_patterns_file: config/prohibited_patterns.txt
     orphan_detection_extensions: from_project_config
     orphan_detection_exclude_dirs:
@@ -302,8 +302,8 @@ thresholds:
       - logs
       - benchmarks
 
-  # Stage 8: Benchmark regression detection
-  stage_8:
+  # Stage 12: Benchmark regression detection
+  stage_12:
     regression_threshold: 0.05
     dimensions:
       - completeness
@@ -319,7 +319,7 @@ thresholds:
 # -----------------------------------------------------------------------------
 # Section 11: patterns — Prohibited Code Patterns
 # -----------------------------------------------------------------------------
-# Regex patterns that Stage 6 scans for in generated code.
+# Regex patterns that Stage 10 scans for in generated code.
 # Any match causes a gate failure — the implementation must not contain these.
 
 patterns:

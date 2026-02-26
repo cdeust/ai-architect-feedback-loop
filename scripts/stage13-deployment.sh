@@ -2,21 +2,21 @@
 set -euo pipefail
 
 # ============================================================================
-# stage9-deployment.sh — Stage 9: Deployment Simulation
+# stage13-deployment.sh — Stage 13: Deployment Simulation
 # ============================================================================
 #
 # Runs the project's deploy_command from config/project.json.
 # If no deploy_command is configured, the stage passes with SKIP.
 #
 # Usage:
-#   scripts/stage9-deployment.sh \
+#   scripts/stage13-deployment.sh \
 #       --builder-dir /path/to/target-product \
 #       --output runs/20260215-120000
 #
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STAGE_NAME="stage9_deployment"
+STAGE_NAME="stage13_deployment"
 
 # ---------------------------------------------------------------------------
 # Structured logging
@@ -87,7 +87,7 @@ if [[ -f "$PROJECT_CONFIG" ]]; then
     DEPLOY_CMD=$(python3 -c "import json; v=json.load(open('$PROJECT_CONFIG')).get('deploy_command'); print(v if v else '')" 2>/dev/null || echo "")
 fi
 
-log "INFO" "Stage 9 started — Deployment Simulation"
+log "INFO" "Stage 13started — Deployment Simulation"
 log "INFO" "Builder dir: $BUILDER_DIR"
 
 # ---------------------------------------------------------------------------
@@ -119,13 +119,13 @@ with open(report_path, 'w') as f:
     f.write('\n')
 
 print(json.dumps({
-    "stage": "stage9_deployment",
+    "stage": "stage13_deployment",
     "result": "PASS",
     "reason": "skipped — no deploy_command",
 }))
 PYEOF
 
-    log "INFO" "Stage 9 completed — result: PASS (skipped)"
+    log "INFO" "Stage 13completed — result: PASS (skipped)"
     exit 0
 fi
 
@@ -143,7 +143,7 @@ END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
 # Save full output for debugging
-echo "$DEPLOY_OUTPUT" > "$OUTPUT_DIR/stage9_deploy_output.txt"
+echo "$DEPLOY_OUTPUT" > "$OUTPUT_DIR/stage13_deploy_output.txt"
 
 log "INFO" "Deploy command completed in ${DURATION}s with exit code $DEPLOY_EXIT"
 
@@ -183,14 +183,14 @@ with open(report_path, 'w') as f:
     f.write('\n')
 
 print(json.dumps({
-    "stage": "stage9_deployment",
+    "stage": "stage13_deployment",
     "result": result,
     "exit_code": int(exit_code),
     "duration_seconds": int(duration),
 }))
 PYEOF
 
-log "INFO" "Stage 9 completed — result: $OVERALL_RESULT"
+log "INFO" "Stage 13completed — result: $OVERALL_RESULT"
 log "INFO" "Report written to $OUTPUT_DIR/deployment_report.json"
 
 if [[ "$OVERALL_RESULT" == "FAIL" ]]; then

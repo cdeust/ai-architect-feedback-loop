@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# test_stage8.sh — Integration tests for Stage 8 quality gate (compare mode)
+# test_stage12.sh — Integration tests for Stage 12 quality gate (compare mode)
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,18 +54,18 @@ cleanup() {
 }
 
 # ---------------------------------------------------------------------------
-# IT-S8-001: PASS when metrics match baselines
+# IT-S12-001: PASS when metrics match baselines
 # ---------------------------------------------------------------------------
 
 test_pass_on_maintained() {
-    echo "IT-S8-001: PASS when all dimensions maintained"
+    echo "IT-S12-001: PASS when all dimensions maintained"
     setup_test_fixtures
 
     # Current = same as baseline
     cp "$BASELINES_DIR/test_bench/metrics.json" "$CURRENT_DIR/test_bench/metrics.json"
 
     local exit_code=0
-    "$SCRIPT_DIR/stage8-benchmark.sh" \
+    "$SCRIPT_DIR/stage12-benchmark.sh" \
         --baselines "$BASELINES_DIR" \
         --current-dir "$CURRENT_DIR" \
         --output "$OUTPUT_DIR" \
@@ -93,11 +93,11 @@ test_pass_on_maintained() {
 }
 
 # ---------------------------------------------------------------------------
-# IT-S8-002: PASS when metrics improve
+# IT-S12-002: PASS when metrics improve
 # ---------------------------------------------------------------------------
 
 test_pass_on_improved() {
-    echo "IT-S8-002: PASS when dimensions improve"
+    echo "IT-S12-002: PASS when dimensions improve"
     setup_test_fixtures
 
     # Current = improved (delta must exceed threshold 0.05)
@@ -116,7 +116,7 @@ test_pass_on_improved() {
 EOF
 
     local exit_code=0
-    "$SCRIPT_DIR/stage8-benchmark.sh" \
+    "$SCRIPT_DIR/stage12-benchmark.sh" \
         --baselines "$BASELINES_DIR" \
         --current-dir "$CURRENT_DIR" \
         --output "$OUTPUT_DIR" \
@@ -144,11 +144,11 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# IT-S8-003: FAIL when regression detected
+# IT-S12-003: FAIL when regression detected
 # ---------------------------------------------------------------------------
 
 test_fail_on_regression() {
-    echo "IT-S8-003: FAIL when regression detected"
+    echo "IT-S12-003: FAIL when regression detected"
     setup_test_fixtures
 
     # Current = regressed (0.93 -> 0.80, delta = -0.13 > threshold 0.05)
@@ -167,7 +167,7 @@ test_fail_on_regression() {
 EOF
 
     local exit_code=0
-    "$SCRIPT_DIR/stage8-benchmark.sh" \
+    "$SCRIPT_DIR/stage12-benchmark.sh" \
         --baselines "$BASELINES_DIR" \
         --current-dir "$CURRENT_DIR" \
         --output "$OUTPUT_DIR" \
@@ -217,16 +217,16 @@ print(f\"{d['baseline']}|{d['current']}|{d['delta']}|{d['result']}\")
 }
 
 # ---------------------------------------------------------------------------
-# IT-S8-004: Report schema validation
+# IT-S12-004: Report schema validation
 # ---------------------------------------------------------------------------
 
 test_report_schema() {
-    echo "IT-S8-004: Report schema has required fields"
+    echo "IT-S12-004: Report schema has required fields"
     setup_test_fixtures
 
     cp "$BASELINES_DIR/test_bench/metrics.json" "$CURRENT_DIR/test_bench/metrics.json"
 
-    "$SCRIPT_DIR/stage8-benchmark.sh" \
+    "$SCRIPT_DIR/stage12-benchmark.sh" \
         --baselines "$BASELINES_DIR" \
         --current-dir "$CURRENT_DIR" \
         --output "$OUTPUT_DIR" \
@@ -262,15 +262,15 @@ print('OK')
 }
 
 # ---------------------------------------------------------------------------
-# IT-S8-005: Missing baselines directory
+# IT-S12-005: Missing baselines directory
 # ---------------------------------------------------------------------------
 
 test_missing_baselines() {
-    echo "IT-S8-005: Error on missing baselines directory"
+    echo "IT-S12-005: Error on missing baselines directory"
 
     local exit_code=0
     TEST_DIR=$(mktemp -d)
-    "$SCRIPT_DIR/stage8-benchmark.sh" \
+    "$SCRIPT_DIR/stage12-benchmark.sh" \
         --baselines "$TEST_DIR/nonexistent" \
         --current-dir "$TEST_DIR" \
         --output "$TEST_DIR/output" \
@@ -290,7 +290,7 @@ test_missing_baselines() {
 # ---------------------------------------------------------------------------
 
 echo "========================================"
-echo "Stage 8 Integration Tests"
+echo "Stage 12 Integration Tests"
 echo "========================================"
 echo ""
 

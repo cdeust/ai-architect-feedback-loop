@@ -1,0 +1,153 @@
+project:
+  language: python
+  source_extensions:
+  - .py
+  test_file_patterns:
+  - '**/test_*.py'
+  - '**/*_test.py'
+  test_dir_name: tests
+  module_prefix: ''
+  modules_dir: .
+  domain_module: null
+  interface_suffix: null
+  base_branch: main
+  build_command: make build
+  test_command: make test
+  deploy_command: null
+  required_tools:
+  - python3
+  - git
+  - gh
+  - jq
+  - claude
+  contract_extractor: null
+license:
+  key_file: ~/.aiprd/license-key
+  validate_on_run: true
+architecture: '# Project Architecture
+
+
+  Describe your project architecture here.
+
+  '
+modules: {}
+categories:
+  api_change:
+    primary_engines: &id001 []
+    related_ports: []
+    key_services: []
+  behavior_change:
+    primary_engines: *id001
+    related_ports: []
+    key_services: []
+  dependency_change:
+    primary_engines: *id001
+    related_ports: []
+    key_services: []
+  config_change:
+    primary_engines: *id001
+    related_ports: []
+    key_services: []
+  schema_change:
+    primary_engines: *id001
+    related_ports: []
+    key_services: []
+  performance_change:
+    primary_engines: []
+    related_ports: []
+    key_services: []
+  security_change:
+    primary_engines: *id001
+    related_ports: []
+    key_services: []
+git:
+  run_branch_pattern: pipeline/run-{run_ts}
+  feature_branch_pattern: pipeline/improvement-{finding_id}
+  commit_message: 'pipeline: {finding_id} — {description}'
+  remote: origin
+pr:
+  title: 'pipeline: improve {engines} — {finding_id}'
+  labels:
+  - pipeline-generated
+  - improvement
+  label_engines: true
+  prd_max_lines: 100
+pipeline:
+  top_n_findings: 20
+  max_implementations: 5
+  exclude_categories:
+  - benchmarks
+  findings_source: auto
+  claude_max_turns:
+    analysis: 5
+    implementation: 30
+    verification: 5
+  claude_timeout:
+    default: 300
+    implementation: 1800
+  claude_model:
+    analysis: haiku
+    prd: opus
+    implementation: sonnet
+    verification: sonnet
+    reviewer: opus
+    benchmark: haiku
+    default: sonnet
+notifications:
+  enabled: true
+  sound: Glass
+  title: AI-Architect Pipeline
+thresholds:
+  stage_1:
+    relevance_score_minimum: 0.5
+    relevance_categories:
+    - api_change
+    - behavior_change
+    - dependency_change
+    - config_change
+    - schema_change
+    - performance_change
+    - security_change
+    - prompting
+    - retrieval
+    - verification
+    - embeddings
+    - inference
+    - cost_optimization
+    - benchmarks
+  stage_2:
+    compound_score_minimum: 0.3
+    engines_affected_minimum: 2
+  stage_5:
+    prd_quality_minimum: 0.85
+  stage_10:
+    prohibited_patterns_file: config/prohibited_patterns.txt
+    orphan_detection_extensions: from_project_config
+    orphan_detection_exclude_dirs:
+    - .build
+    - .git
+    - runs
+    - logs
+    - benchmarks
+  stage_12:
+    regression_threshold: 0.05
+    dimensions:
+    - completeness
+    - accuracy
+    - consistency
+    - actionability
+  retry:
+    max_attempts: 3
+patterns:
+- TODO
+- FIXME
+- HACK
+- XXX
+- TEMP\b
+- PLACEHOLDER
+- placeholder
+- not implemented
+- stub\b
+schedule:
+  hour: 2
+  minute: 0

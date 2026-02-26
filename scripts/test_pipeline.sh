@@ -147,11 +147,12 @@ create_test_pipeline() {
     create_mock_script "$env_dir/scripts/health_check.sh" "success"
     create_mock_script "$env_dir/scripts/stage2-impact-analysis.sh" "success"
     create_mock_script "$env_dir/scripts/stage3-integration-design.sh" "success"
-    create_mock_script "$env_dir/scripts/stage4-prd-generation.sh" "success"
+    create_mock_script "$env_dir/scripts/stage5-prd-generation.sh" "success"
+    create_mock_script "$env_dir/scripts/stage6-prd-review.sh" "success"
     create_mock_script "$env_dir/scripts/retry_orchestrator.sh" "success"
-    create_mock_script "$env_dir/scripts/stage8-benchmark.sh" "success"
-    create_mock_script "$env_dir/scripts/stage9-deployment.sh" "success"
-    create_mock_script "$env_dir/scripts/stage10-pull-request.sh" "success"
+    create_mock_script "$env_dir/scripts/stage12-benchmark.sh" "success"
+    create_mock_script "$env_dir/scripts/stage13-deployment.sh" "success"
+    create_mock_script "$env_dir/scripts/stage14-pull-request.sh" "success"
     create_mock_script "$env_dir/scripts/notify.sh" "success"
 
     # Copy real compose_improvement_report.py

@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # ============================================================================
-# stage5-implementation.sh — Stage 5: Implementation (Claude Code CLI)
+# stage7-implementation.sh — Stage 7: Implementation (Claude Code CLI)
 # ============================================================================
 #
 # Creates feature branches on the product repo and invokes Claude Code CLI
 # to implement upgrades. Verifies that changes compile and tests pass.
 #
-# Usage (called by Makefile pipeline-stage5):
-#   scripts/stage5-implementation.sh \
+# Usage (called by Makefile pipeline-stage7):
+#   scripts/stage7-implementation.sh \
 #       --run-dir runs/TIMESTAMP \
 #       --builder-dir /path/to/target-product \
 #       --engine-graph config/engine_graph.json \
@@ -19,7 +19,7 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STAGE_NAME="stage5_implementation"
+STAGE_NAME="stage7_implementation"
 
 # ---------------------------------------------------------------------------
 # Structured logging
@@ -49,6 +49,9 @@ run_with_timeout() {
 
 # Source shared AI invocation helper
 source "$SCRIPT_DIR/ai_invoke.sh"
+
+# Source artifact path helpers
+source "$SCRIPT_DIR/artifact_paths.sh"
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -151,7 +154,7 @@ if [[ -n "$DIRTY" ]]; then
     exit 1
 fi
 
-# Resolve paths to absolute (Stage 5 cd's to BUILDER_DIR)
+# Resolve paths to absolute (Stage 7 cd's to BUILDER_DIR)
 RUN_DIR="$(cd "$RUN_DIR" && pwd)"
 OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" && pwd)/$(basename "$OUTPUT_DIR")"
 BUILDER_DIR="$(cd "$BUILDER_DIR" && pwd)"
@@ -210,7 +213,7 @@ python3 "$SCRIPT_DIR/extract_contracts.py" \
 log "INFO" "Contracts extracted"
 
 # ---------------------------------------------------------------------------
-# Find accepted Stage 4 outputs
+# Find accepted Stage 5 outputs
 # ---------------------------------------------------------------------------
 
 ACCEPTED_FINDINGS=()
@@ -219,7 +222,19 @@ if [[ -n "$SINGLE_FINDING_ID" ]]; then
     ACCEPTED_FINDINGS=("$SINGLE_FINDING_ID")
     log "INFO" "Single-finding mode: processing $SINGLE_FINDING_ID"
 else
-    for validation_file in "$RUN_DIR"/validation_stage4_*.json; do
+    # Scan new layout (findings/$FID/stage5-validation.json) and old layout
+    _scan_s5_files=()
+    for vf in "$RUN_DIR"/findings/*/stage5-validation.json; do
+        [[ -f "$vf" ]] && _scan_s5_files+=("$vf")
+    done
+    # Backward compat: old stage4 naming
+    for vf in "$RUN_DIR"/findings/*/stage4-validation.json; do
+        [[ -f "$vf" ]] && _scan_s5_files+=("$vf")
+    done
+    for vf in "$RUN_DIR"/validation_stage4_*.json; do
+        [[ -f "$vf" ]] && _scan_s5_files+=("$vf")
+    done
+    for validation_file in "${_scan_s5_files[@]}"; do
         [[ ! -f "$validation_file" ]] && continue
 
         RESULT=$(python3 -c "import json; print(json.load(open('$validation_file')).get('result', ''))" 2>/dev/null || echo "")
@@ -232,7 +247,7 @@ else
     done
 fi
 
-log "INFO" "Stage 5 started — Implementation"
+log "INFO" "Stage 7 started — Implementation"
 log "INFO" "Found ${#ACCEPTED_FINDINGS[@]} accepted PRDs"
 
 if [[ ${#ACCEPTED_FINDINGS[@]} -eq 0 ]]; then
@@ -249,7 +264,7 @@ summary = {
     'failed': 0,
     'reports': [],
 }
-with open('$OUTPUT_DIR/stage5_summary.json', 'w') as f:
+with open('$OUTPUT_DIR/stage7_summary.json', 'w') as f:
     json.dump(summary, f, indent=2)
     f.write('\n')
 "
@@ -298,9 +313,9 @@ for FINDING_ID in "${ACCEPTED_FINDINGS[@]}"; do
     PROCESSED=$((PROCESSED + 1))
 
     # Locate files
-    PRD_DIR="$RUN_DIR/prd_output_${FINDING_ID}"
-    INTEGRATION_PLAN="$RUN_DIR/integration_plan_${FINDING_ID}.json"
-    MANIFEST="$RUN_DIR/manifest_${FINDING_ID}.json"
+    PRD_DIR=$(artifact_prd_dir "$RUN_DIR" "$FINDING_ID")
+    INTEGRATION_PLAN=$(artifact_integration "$RUN_DIR" "$FINDING_ID")
+    MANIFEST=$(artifact_manifest "$RUN_DIR" "$FINDING_ID")
 
     if [[ ! -d "$PRD_DIR" ]]; then
         log "WARN" "PRD output dir not found: $PRD_DIR — skipping"
@@ -375,6 +390,112 @@ PYEOF
         log "INFO" "Creating branch: $BRANCH_NAME"
         git -C "$BUILDER_DIR" checkout -b "$BRANCH_NAME" 2>/dev/null
     fi
+
+    # -------------------------------------------------------------------
+    # Parallel worker path: decompose into work units if 2+ modifications
+    # Only applies in CLI mode (not auto/session mode)
+    # -------------------------------------------------------------------
+    if [[ "${PIPELINE_AUTO_MODE:-}" != "1" && "${PIPELINE_SESSION_MODE:-}" != "1" ]]; then
+        WU_COUNT=0
+        WU_DIR="$TMP_DIR/work_units_${FINDING_ID}"
+        if [[ -f "$INTEGRATION_PLAN" && -d "$PRD_DIR" && -f "$PRD_DIR/prd.md" ]]; then
+            MANIFEST_ARG=""
+            [[ -f "$MANIFEST" ]] && MANIFEST_ARG="--manifest $MANIFEST"
+            # shellcheck disable=SC2086
+            WU_COUNT=$(python3 "$SCRIPT_DIR/decompose_work_units.py" \
+                --integration-plan "$INTEGRATION_PLAN" \
+                --prd "$PRD_DIR/prd.md" \
+                $MANIFEST_ARG \
+                --output-dir "$WU_DIR" 2>/dev/null \
+                | python3 -c "import json,sys; print(json.load(sys.stdin)['total_work_units'])" 2>/dev/null \
+                || echo "0")
+        fi
+
+        if [[ "$WU_COUNT" -ge 2 ]]; then
+            log "INFO" "Decomposed into $WU_COUNT work units — running parallel workers"
+
+            # Launch workers in parallel
+            WORKER_OUTPUT="$TMP_DIR/worker_output_${FINDING_ID}"
+            mkdir -p "$WORKER_OUTPUT"
+            WORKER_PIDS=()
+            WORKER_FAILURES=0
+
+            for wu_file in "$WU_DIR"/wu-*.json; do
+                [[ -f "$wu_file" ]] || continue
+                "$SCRIPT_DIR/stage7-worker.sh" \
+                    --work-unit "$wu_file" \
+                    --builder-dir "$BUILDER_DIR" \
+                    --branch "$BRANCH_NAME" \
+                    --output "$WORKER_OUTPUT" \
+                    --timeout "$TIMEOUT" &
+                WORKER_PIDS+=($!)
+            done
+
+            # Wait for all workers
+            for pid in "${WORKER_PIDS[@]}"; do
+                wait "$pid" || WORKER_FAILURES=$((WORKER_FAILURES + 1))
+            done
+
+            log "INFO" "Workers completed — $WORKER_FAILURES failures out of $WU_COUNT"
+
+            # Apply patches sequentially to the branch
+            git -C "$BUILDER_DIR" checkout "$BRANCH_NAME" 2>/dev/null
+            PATCHES_APPLIED=0
+            for patch_dir in "$WORKER_OUTPUT"/patches_wu-*; do
+                [[ -d "$patch_dir" ]] || continue
+                for patch_file in "$patch_dir"/*.patch; do
+                    [[ -f "$patch_file" ]] || continue
+                    if git -C "$BUILDER_DIR" am "$patch_file" 2>/dev/null; then
+                        PATCHES_APPLIED=$((PATCHES_APPLIED + 1))
+                    else
+                        git -C "$BUILDER_DIR" am --abort 2>/dev/null || true
+                        log "WARN" "Patch failed to apply: $patch_file"
+                    fi
+                done
+            done
+
+            log "INFO" "Applied $PATCHES_APPLIED patches to $BRANCH_NAME"
+
+            # Run reviewer if patches were applied
+            if [[ "$PATCHES_APPLIED" -gt 0 ]]; then
+                REVIEWER_OUTPUT="$TMP_DIR/reviewer_${FINDING_ID}.json"
+                REVIEWER_EXIT=0
+                "$SCRIPT_DIR/stage7-reviewer.sh" \
+                    --prd "$PRD_DIR/prd.md" \
+                    --integration-plan "$INTEGRATION_PLAN" \
+                    --builder-dir "$BUILDER_DIR" \
+                    --branch "$BRANCH_NAME" \
+                    --base-branch "$ORIGINAL_BRANCH" \
+                    --output "$REVIEWER_OUTPUT" \
+                    --timeout 300 \
+                    || REVIEWER_EXIT=$?
+
+                if [[ "$REVIEWER_EXIT" -ne 0 ]]; then
+                    log "WARN" "Reviewer flagged issues for $FINDING_ID"
+                fi
+            fi
+
+            # Skip to post-implementation checks (jump past single-session code)
+            # The post-impl checks below (commit count, manifest, build) still run
+            COMMIT_COUNT=$(git -C "$BUILDER_DIR" rev-list --count HEAD ^"${ORIGINAL_BRANCH}" 2>/dev/null || echo "0")
+
+            if [[ "$COMMIT_COUNT" -eq 0 ]]; then
+                log "WARN" "No commits produced for $FINDING_ID (parallel path)"
+                git -C "$BUILDER_DIR" checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
+                git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
+                REJECTED_COUNT=$((REJECTED_COUNT + 1))
+                add_summary_result "$FINDING_ID" "REJECTED" "No commits from parallel workers"
+                continue
+            fi
+
+            log "INFO" "Parallel path: $COMMIT_COUNT commits for $FINDING_ID"
+
+            # Fall through to manifest/build checks below by jumping past single-session code
+            # We use a flag to skip the single-session AI invocation
+            _PARALLEL_DONE=true
+        fi
+    fi
+    _PARALLEL_DONE="${_PARALLEL_DONE:-false}"
 
     # Generate build commands from project config
     PROJECT_CONFIG_FILE="$SCRIPT_DIR/../config/project.json"
@@ -475,12 +596,13 @@ PYEOF
         log "INFO" "Appended failure context from $FAILURE_CONTEXT_FILE"
     fi
 
+    if [[ "$_PARALLEL_DONE" == "false" ]]; then
     # Invoke AI analysis (builder dir for code modification)
     RAW_OUTPUT="$TMP_DIR/raw_impl_${FINDING_ID}.txt"
     CLAUDE_EXIT=0
 
     cd "$BUILDER_DIR"
-    ai_invoke "$TMP_DIR/prompt_${FINDING_ID}.md" "$RAW_OUTPUT" "stage5" "$FINDING_ID" \
+    ai_invoke "$TMP_DIR/prompt_${FINDING_ID}.md" "$RAW_OUTPUT" "stage7" "$FINDING_ID" \
         --max-turns 30 \
         || CLAUDE_EXIT=$?
 
@@ -511,6 +633,7 @@ PYEOF
     fi
 
     log "INFO" "Found $COMMIT_COUNT commits for $FINDING_ID"
+    fi  # end _PARALLEL_DONE check
 
     # Check manifest compliance: only must_change files were modified
     MANIFEST_OK=true
@@ -568,12 +691,12 @@ PYEOF
 done
 
 # ---------------------------------------------------------------------------
-# Write stage5_summary.json
+# Write stage7_summary.json
 # ---------------------------------------------------------------------------
 
 TOTAL=$((ACCEPTED_COUNT + REJECTED_COUNT + FAILED_COUNT))
 
-python3 - "$SUMMARY_FILE" "$OUTPUT_DIR/stage5_summary.json" "$TOTAL" "$ACCEPTED_COUNT" "$REJECTED_COUNT" "$FAILED_COUNT" <<'PYEOF'
+python3 - "$SUMMARY_FILE" "$OUTPUT_DIR/stage7_summary.json" "$TOTAL" "$ACCEPTED_COUNT" "$REJECTED_COUNT" "$FAILED_COUNT" <<'PYEOF'
 import json, sys
 from datetime import datetime, timezone
 
@@ -599,7 +722,7 @@ with open(output_file, 'w') as f:
     f.write('\n')
 PYEOF
 
-log "INFO" "Stage 5 completed — processed=$TOTAL accepted=$ACCEPTED_COUNT rejected=$REJECTED_COUNT failed=$FAILED_COUNT"
-log "INFO" "Summary written to $OUTPUT_DIR/stage5_summary.json"
+log "INFO" "Stage 7 completed — processed=$TOTAL accepted=$ACCEPTED_COUNT rejected=$REJECTED_COUNT failed=$FAILED_COUNT"
+log "INFO" "Summary written to $OUTPUT_DIR/stage7_summary.json"
 
 exit 0

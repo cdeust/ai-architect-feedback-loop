@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================================
-# stage8-benchmark.sh — Stage 8: Quality Benchmark Gate
+# stage12-benchmark.sh — Stage 12: Quality Benchmark Gate
 # ============================================================================
 #
 # Two-mode quality gate that uses the product's own verification metrics
@@ -16,7 +16,7 @@ set -euo pipefail
 #   captures outputs, extracts metrics, and compares.
 #
 # Usage:
-#   scripts/stage8-benchmark.sh \
+#   scripts/stage12-benchmark.sh \
 #       --config config/thresholds.json \
 #       --baselines benchmarks/baselines \
 #       --output runs/20260215-120000 \
@@ -26,7 +26,7 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STAGE_NAME="stage8_quality_gate"
+STAGE_NAME="stage12_quality_gate"
 
 # ---------------------------------------------------------------------------
 # Structured logging
@@ -124,11 +124,11 @@ if [[ -n "$CONFIG_PATH" && -f "$CONFIG_PATH" ]]; then
 import json
 with open('$CONFIG_PATH') as f:
     c = json.load(f)
-print(c.get('stage_8', {}).get('regression_threshold', 0.05))
+print(c.get('stage_12', {}).get('regression_threshold', c.get('stage_8', {}).get('regression_threshold', 0.05)))
 ")
 fi
 
-log "INFO" "Stage 8 started — mode=$MODE, threshold=$REGRESSION_THRESHOLD"
+log "INFO" "Stage 12 started — mode=$MODE, threshold=$REGRESSION_THRESHOLD"
 log "INFO" "Baselines: $BASELINES_DIR"
 log "INFO" "Output: $OUTPUT_DIR"
 
@@ -309,7 +309,7 @@ with open(report_path, 'w') as f:
     f.write('\n')
 
 print(json.dumps({
-    "stage": "stage8_quality_gate",
+    "stage": "stage12_quality_gate",
     "mode": "compare",
     "overall_result": overall_result,
     "total_checks": total_checks,
@@ -367,7 +367,7 @@ print('; '.join(r['description'] for r in reqs))
         echo "$prompt" > "$prompt_file"
 
         local gen_exit=0
-        ai_invoke "$prompt_file" "$bench_output_dir/prd.md" "stage8" "$bench_name" \
+        ai_invoke "$prompt_file" "$bench_output_dir/prd.md" "stage12" "$bench_name" \
             --output-format text --max-turns 15 \
             || gen_exit=$?
 
@@ -431,9 +431,9 @@ esac
 
 RESULT=$?
 if [[ $RESULT -eq 0 ]]; then
-    log "INFO" "Stage 8 completed — PASS"
+    log "INFO" "Stage 12 completed — PASS"
 else
-    log "ERROR" "Stage 8 completed — FAIL"
+    log "ERROR" "Stage 12 completed — FAIL"
 fi
 
 exit $RESULT

@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # ============================================================================
-# stage10-pull-request.sh — Stage 10: Pull Request Creation + Staging Sync
+# stage14-pull-request.sh — Stage 14: Pull Request Creation + Staging Sync
 # ============================================================================
 #
 # Creates a GitHub PR on the product repo with a structured description
 # assembled from all pipeline stage outputs, then runs staging sync.
 #
 # Usage:
-#   scripts/stage10-pull-request.sh \
+#   scripts/stage14-pull-request.sh \
 #       --run-dir runs/TIMESTAMP \
 #       --builder-dir /path/to/target-product \
 #       --engine-graph config/engine_graph.json \
@@ -19,7 +19,7 @@ set -euo pipefail
 # ============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-STAGE_NAME="stage10_pull_request"
+STAGE_NAME="stage14_pull_request"
 
 # Resolve base branch from project config
 BASE_BRANCH="main"
@@ -122,7 +122,7 @@ if [[ -z "$BRANCH_EXISTS" ]]; then
     exit 1
 fi
 
-log "INFO" "Stage 10 started — Pull Request Creation"
+log "INFO" "Stage 14started — Pull Request Creation"
 log "INFO" "Finding: $FINDING_ID, Branch: $BRANCH"
 
 # ---------------------------------------------------------------------------
@@ -269,7 +269,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Write stage10_summary.json
+# Write stage14_summary.json
 # ---------------------------------------------------------------------------
 
 # Convert comma-separated labels to JSON array
@@ -290,12 +290,12 @@ summary = {
     'timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 }
 
-with open('$OUTPUT_DIR/stage10_summary.json', 'w') as f:
+with open('$OUTPUT_DIR/stage14_summary.json', 'w') as f:
     json.dump(summary, f, indent=2)
     f.write('\n')
 "
 
-log "INFO" "Stage 10 completed — PR: $PR_URL"
-log "INFO" "Summary written to $OUTPUT_DIR/stage10_summary.json"
+log "INFO" "Stage 14completed — PR: $PR_URL"
+log "INFO" "Summary written to $OUTPUT_DIR/stage14_summary.json"
 
 exit 0
