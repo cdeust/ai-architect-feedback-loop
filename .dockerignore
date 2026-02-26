@@ -1,0 +1,10 @@
+.git/
+runs/
+logs/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+config/pipeline.yml
+config/pipeline_preferences.json
+config/.config_resolved

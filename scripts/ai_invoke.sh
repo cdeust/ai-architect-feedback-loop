@@ -108,10 +108,15 @@ with open('$OUTPUT_DIR/pending_stage.json', 'w') as f:
         fi
     else
         # --- CLI mode ---
+        local perm_mode="--permission-mode acceptEdits"
+        if [[ "${PIPELINE_DOCKER:-}" == "1" ]]; then
+            perm_mode="--dangerously-skip-permissions"
+        fi
+
         local claude_exit=0
         run_with_timeout "$timeout" "$output_file" \
             env -u CLAUDECODE claude -p "$(cat "$prompt_file")" \
-            --permission-mode acceptEdits "$@" \
+            $perm_mode "$@" \
             || claude_exit=$?
 
         if [[ "$claude_exit" -ne 0 ]]; then
@@ -119,7 +124,7 @@ with open('$OUTPUT_DIR/pending_stage.json', 'w') as f:
             claude_exit=0
             run_with_timeout "$timeout" "$output_file" \
                 env -u CLAUDECODE claude -p "$(cat "$prompt_file")" \
-                --permission-mode acceptEdits "$@" \
+                $perm_mode "$@" \
                 || claude_exit=$?
         fi
 

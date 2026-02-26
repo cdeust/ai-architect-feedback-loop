@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BUILDER_DIR="$(git rev-parse --show-toplevel)"
+PIPELINE_REPO="${PIPELINE_REPO:-/app}"
+HOOK_OUTPUT=$(mktemp -d)
+trap 'rm -rf "$HOOK_OUTPUT"' EXIT
+
+echo "[pre-commit] Running quality gates..."
+"$PIPELINE_REPO/scripts/stage6-gates.sh" \
+    --builder-dir "$BUILDER_DIR" \
+    --config "$PIPELINE_REPO/config/thresholds.json" \
+    --patterns "$PIPELINE_REPO/config/prohibited_patterns.txt" \
+    --output "$HOOK_OUTPUT" \
+    --skip-gate 2 --skip-gate 3 --skip-gate 6

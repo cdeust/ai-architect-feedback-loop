@@ -30,6 +30,20 @@ claude            # then type: /run-pipeline
 
 The setup wizard detects your project language, module structure, build/test commands, and git conventions. It generates `config/pipeline.yml` — the single source of truth for all settings. If your target repo has a `CLAUDE.md` describing its architecture, the pipeline uses it to enrich analysis and implementation.
 
+## Docker quickstart
+
+Run the pipeline in a container — zero dependencies to install:
+
+```bash
+make docker-build                                            # one-time
+TARGET_REPO=/path/to/your-product make docker-setup          # first time
+TARGET_REPO=/path/to/your-product make docker-run            # run pipeline
+```
+
+The container creates a **local clone** of your repo (original is mounted read-only), installs pre-commit hooks for quality gates, and runs Claude Code with `--dangerously-skip-permissions` (safe inside the container).
+
+Requires: Docker, `~/.claude` (Claude auth), `~/.config/gh` (GitHub auth), `~/.aiprd/license-key`.
+
 ## What you get
 
 A summary like this at the end of every run:
@@ -113,6 +127,9 @@ Full schema and field reference: [docs/findings-format.md](docs/findings-format.
 | Test failures in Stage 5 | Verify `test_command` in `pipeline.yml` works in your target repo |
 | `gh` errors in Stage 10 | Run `gh auth login` to authenticate the GitHub CLI |
 | Health check fails on tools | Add missing tools to your PATH or update `required_tools` in `pipeline.yml` |
+| Docker: `/workspace/target must be a git repository` | Set `TARGET_REPO` to a valid git repo path |
+| Docker: clone fails or wrong branch | Ensure your target repo has the `base_branch` configured in `project.json` |
+| Docker: permission denied on volumes | Check that `~/.claude`, `~/.config/gh`, and `~/.aiprd` exist and are readable |
 
 ## License
 

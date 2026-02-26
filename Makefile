@@ -382,6 +382,58 @@ clean: ## Remove pipeline run artifacts and logs
 	@echo "Clean complete."
 
 # ============================================================================
+# Docker
+# ============================================================================
+
+DOCKER_IMAGE := ai-architect-pipeline
+DOCKER_TAG   := latest
+
+.PHONY: docker-build
+docker-build: ## Build the Docker image with all dependencies
+	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .
+
+.PHONY: docker-run
+docker-run: ## Run full pipeline in Docker (set TARGET_REPO)
+	docker run --rm -it \
+		-v $${TARGET_REPO:?Set TARGET_REPO to your product repo}:/workspace/target:ro \
+		-v $$(pwd)/config:/app/config \
+		-v $$(pwd)/runs:/app/runs \
+		-v $$(pwd)/logs:/app/logs \
+		-v $$HOME/.claude:/home/pipeline/.claude:ro \
+		-v $$HOME/.config/gh:/home/pipeline/.config/gh:ro \
+		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
+		-e ANTHROPIC_API_KEY=$${ANTHROPIC_API_KEY:-} \
+		$(DOCKER_IMAGE):$(DOCKER_TAG)
+
+.PHONY: docker-setup
+docker-setup: ## Run interactive setup wizard in Docker
+	docker run --rm -it \
+		-v $${TARGET_REPO:?Set TARGET_REPO to your product repo}:/workspace/target:ro \
+		-v $$(pwd)/config:/app/config \
+		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
+		$(DOCKER_IMAGE):$(DOCKER_TAG) setup
+
+.PHONY: docker-health
+docker-health: ## Run health check in Docker
+	docker run --rm -it \
+		-v $${TARGET_REPO:?Set TARGET_REPO to your product repo}:/workspace/target:ro \
+		-v $$(pwd)/config:/app/config \
+		-v $$HOME/.config/gh:/home/pipeline/.config/gh:ro \
+		$(DOCKER_IMAGE):$(DOCKER_TAG) health
+
+.PHONY: docker-shell
+docker-shell: ## Open a shell inside the Docker container
+	docker run --rm -it \
+		-v $${TARGET_REPO:?Set TARGET_REPO to your product repo}:/workspace/target:ro \
+		-v $$(pwd)/config:/app/config \
+		-v $$(pwd)/runs:/app/runs \
+		-v $$(pwd)/logs:/app/logs \
+		-v $$HOME/.claude:/home/pipeline/.claude:ro \
+		-v $$HOME/.config/gh:/home/pipeline/.config/gh:ro \
+		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
+		$(DOCKER_IMAGE):$(DOCKER_TAG) shell
+
+# ============================================================================
 # Help
 # ============================================================================
 
