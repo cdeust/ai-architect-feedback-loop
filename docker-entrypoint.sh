@@ -146,6 +146,26 @@ if [[ -f "$CONFIG_DIR/pipeline.yml" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Step 5.5: Generate engine graph from source + overrides
+# ---------------------------------------------------------------------------
+if [[ -f "$CONFIG_DIR/engine_graph_overrides.json" && -f "$CONFIG_DIR/project.json" ]]; then
+    log "Generating engine graph..."
+    PACKAGES_DIR=$(python3 -c "
+import json
+cfg = json.load(open('$CONFIG_DIR/project.json'))
+mdir = cfg.get('modules_dir', 'packages')
+if mdir == '.':
+    print('$BUILD_DIR')
+else:
+    print('$BUILD_DIR/' + mdir)
+" 2>/dev/null || echo "$BUILD_DIR")
+    python3 "$PIPELINE_REPO/scripts/generate_engine_graph.py" \
+        --packages-dir "$PACKAGES_DIR" \
+        --overrides "$CONFIG_DIR/engine_graph_overrides.json" \
+        --output "$CONFIG_DIR/engine_graph.json" 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
 # Step 6: Install pre-commit hooks in clone
 # ---------------------------------------------------------------------------
 if [[ -f "$PIPELINE_REPO/scripts/install-hooks.sh" ]]; then
