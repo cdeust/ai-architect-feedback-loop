@@ -44,15 +44,29 @@ fi
 # Copy essential config files into the writable home directory.
 CLAUDE_HOME="/home/pipeline/.claude"
 CLAUDE_MOUNT="/home/pipeline/.claude-host"
+mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/todos" "$CLAUDE_HOME/plugins"
+
 if [[ -d "$CLAUDE_MOUNT" ]]; then
     log "Setting up writable Claude config from host mount..."
-    mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/todos" "$CLAUDE_HOME/plugins"
-    # Copy only config files (not debug/history/cache which are huge)
-    for f in settings.json stats-cache.json; do
+    # Copy config files (not debug/history/cache which are huge)
+    for f in settings.json stats-cache.json .credentials.json; do
         [[ -f "$CLAUDE_MOUNT/$f" ]] && cp "$CLAUDE_MOUNT/$f" "$CLAUDE_HOME/$f"
     done
     [[ -d "$CLAUDE_MOUNT/skills" ]] && cp -r "$CLAUDE_MOUNT/skills" "$CLAUDE_HOME/skills"
     [[ -f "$CLAUDE_MOUNT/plugins/blocklist.json" ]] && cp "$CLAUDE_MOUNT/plugins/blocklist.json" "$CLAUDE_HOME/plugins/"
+fi
+
+# If CLAUDE_CODE_OAUTH_TOKEN is set, write credentials file for Claude CLI
+if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" && ! -f "$CLAUDE_HOME/.credentials.json" ]]; then
+    log "Writing OAuth credentials from CLAUDE_CODE_OAUTH_TOKEN..."
+    echo "$CLAUDE_CODE_OAUTH_TOKEN" > "$CLAUDE_HOME/.credentials.json"
+    chmod 600 "$CLAUDE_HOME/.credentials.json"
+fi
+
+# Verify Claude CLI has credentials
+if [[ ! -f "$CLAUDE_HOME/.credentials.json" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    log "WARNING: No Claude credentials found. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY,"
+    log "WARNING: or mount credentials at /home/pipeline/.claude-host/.credentials.json"
 fi
 
 # ---------------------------------------------------------------------------

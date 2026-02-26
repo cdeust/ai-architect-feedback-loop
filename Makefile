@@ -21,7 +21,9 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 # Paths
-BUILDER_DIR ?= $(or $(PIPELINE_BUILDER),$(error Set BUILDER_DIR or PIPELINE_BUILDER to the target product repo))
+# BUILDER_DIR is required for local pipeline stages but NOT for docker-* targets.
+# Docker targets get the builder dir via TARGET_REPO mount at /workspace/target.
+BUILDER_DIR ?= $(PIPELINE_BUILDER)
 CONFIG_DIR := config
 SCRIPTS_DIR := scripts
 RUNS_DIR := runs
@@ -400,8 +402,8 @@ clean: ## Remove pipeline run artifacts and logs
 DOCKER_IMAGE := ai-architect-pipeline
 DOCKER_TAG   := latest
 
-# Auto-extract Claude Code OAuth token from macOS Keychain
-CLAUDE_CODE_OAUTH_TOKEN ?= $(shell security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null)
+# Auto-extract full Claude Code credentials JSON from macOS Keychain
+CLAUDE_CODE_OAUTH_TOKEN ?= $(shell security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
 GH_TOKEN ?= $(shell gh auth token 2>/dev/null)
 
 .PHONY: docker-build

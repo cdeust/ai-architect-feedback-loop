@@ -153,8 +153,9 @@ class ConfigError:
 
 
 def validate_config(config):
-    """Validate pipeline.yml config, returning list of ConfigError."""
+    """Validate pipeline.yml config, returning (errors, warnings) lists of ConfigError."""
     errors = []
+    warnings = []
 
     # Validate module refs in categories
     modules = config.get("modules", {})
@@ -185,16 +186,16 @@ def validate_config(config):
         if not (0 <= minute <= 59):
             errors.append(ConfigError("schedule", "minute", f"Must be 0-59, got {minute}"))
 
-    # Validate license key file path
+    # Validate license key file path (warning only — license checked at runtime)
     license_cfg = config.get("license", {})
     if isinstance(license_cfg, dict):
         key_file = license_cfg.get("key_file", "~/.aiprd/license-key")
         expanded = os.path.expanduser(key_file)
         parent = os.path.dirname(expanded)
         if parent and not os.path.isdir(parent) and not os.path.isfile(expanded):
-            errors.append(ConfigError(
+            warnings.append(ConfigError(
                 "license", "key_file",
-                f"Neither file '{expanded}' nor parent dir '{parent}' exists"
+                f"Neither file '{expanded}' nor parent dir '{parent}' exists (free tier will be used)"
             ))
 
     # Validate branch patterns contain required variables
@@ -249,7 +250,7 @@ def validate_config(config):
                         f"Must be a positive integer, got {val}"
                     ))
 
-    return errors
+    return errors, warnings
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +567,11 @@ def resolve(config_path, output_dir, dry_run=False, validate_only=False):
     config = load_pipeline_yaml(config_path)
 
     # Validate
-    errors = validate_config(config)
+    errors, warnings = validate_config(config)
+    if warnings:
+        print(f"\nValidation warnings ({len(warnings)}):")
+        for warn in warnings:
+            print(f"  WARN: {warn}")
     if errors:
         print(f"\nValidation errors ({len(errors)}):")
         for err in errors:
@@ -676,7 +681,10 @@ def main():
 
         # Validate the generated config
         config = load_pipeline_yaml(output_path)
-        errors = validate_config(config)
+        errors, warns = validate_config(config)
+        if warns:
+            for w in warns:
+                print(f"  Warning: {w}")
         if errors:
             print(f"\nWarning: generated config has {len(errors)} validation issue(s):")
             for err in errors:
