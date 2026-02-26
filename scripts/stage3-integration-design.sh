@@ -392,47 +392,8 @@ PYEOF
     # Extract JSON from Claude output
     PLAN_FILE=$(artifact_integration "$OUTPUT_DIR" "$FINDING_ID")
     EXTRACT_EXIT=0
-    python3 - "$RAW_OUTPUT" "$PLAN_FILE" <<'PYEOF' || EXTRACT_EXIT=$?
-import json, sys
-
-raw_file, plan_file = sys.argv[1], sys.argv[2]
-
-with open(raw_file, 'r') as f:
-    raw = f.read()
-
-# Try parsing structured output
-try:
-    data = json.loads(raw)
-    if isinstance(data, dict) and "result" in data:
-        text = data["result"]
-    elif isinstance(data, list):
-        text = ""
-        for msg in data:
-            if isinstance(msg, dict) and msg.get("role") == "assistant":
-                content = msg.get("content", "")
-                if isinstance(content, list):
-                    for block in content:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text = block.get("text", "")
-                elif isinstance(content, str):
-                    text = content
-    else:
-        text = raw
-except json.JSONDecodeError:
-    text = raw
-
-start = text.find('{')
-end = text.rfind('}')
-if start == -1 or end == -1:
-    print("ERROR: No JSON object found in Claude output", file=sys.stderr)
-    sys.exit(1)
-
-plan = json.loads(text[start:end+1])
-
-with open(plan_file, 'w') as f:
-    json.dump(plan, f, indent=2)
-    f.write('\n')
-PYEOF
+    python3 "$SCRIPT_DIR/extract_json_from_ai.py" "$RAW_OUTPUT" "$PLAN_FILE" \
+        || EXTRACT_EXIT=$?
 
     if [[ "$EXTRACT_EXIT" -ne 0 ]]; then
         log "ERROR" "Failed to extract JSON for $FINDING_ID"
