@@ -415,7 +415,7 @@ docker-run: ## Run full pipeline in Docker (set TARGET_REPO)
 		-v $$(pwd)/config:/app/config \
 		-v $$(pwd)/runs:/app/runs \
 		-v $$(pwd)/logs:/app/logs \
-		-v $$HOME/.claude:/home/pipeline/.claude:ro \
+		-v $$HOME/.claude:/home/pipeline/.claude-host:ro \
 		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
 		-e CLAUDE_CODE_OAUTH_TOKEN=$${CLAUDE_CODE_OAUTH_TOKEN:-} \
 		-e GH_TOKEN=$${GH_TOKEN:-} \
@@ -444,7 +444,7 @@ docker-shell: ## Open a shell inside the Docker container
 		-v $$(pwd)/config:/app/config \
 		-v $$(pwd)/runs:/app/runs \
 		-v $$(pwd)/logs:/app/logs \
-		-v $$HOME/.claude:/home/pipeline/.claude:ro \
+		-v $$HOME/.claude:/home/pipeline/.claude-host:ro \
 		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
 		-e CLAUDE_CODE_OAUTH_TOKEN=$${CLAUDE_CODE_OAUTH_TOKEN:-} \
 		-e GH_TOKEN=$${GH_TOKEN:-} \

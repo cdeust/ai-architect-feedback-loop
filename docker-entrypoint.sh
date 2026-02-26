@@ -39,25 +39,20 @@ fi
 # ---------------------------------------------------------------------------
 # Step 1.5: Make ~/.claude writable for Claude Code CLI
 # ---------------------------------------------------------------------------
-# The host's ~/.claude is mounted read-only. Claude CLI needs to write
-# debug logs, todos, and plugin state. Copy settings into a writable dir.
+# The host's ~/.claude is mounted read-only at /home/pipeline/.claude-host.
+# Claude CLI needs to write debug logs, todos, and plugin state.
+# Copy essential config files into the writable home directory.
 CLAUDE_HOME="/home/pipeline/.claude"
 CLAUDE_MOUNT="/home/pipeline/.claude-host"
-if [[ -d "$CLAUDE_HOME" ]] && ! touch "$CLAUDE_HOME/.write-test" 2>/dev/null; then
-    # Read-only mount — copy essentials to a writable location
-    log "Claude config is read-only — creating writable copy..."
-    mv "$CLAUDE_HOME" "$CLAUDE_MOUNT" 2>/dev/null || true
-    mkdir -p "$CLAUDE_HOME"
+if [[ -d "$CLAUDE_MOUNT" ]]; then
+    log "Setting up writable Claude config from host mount..."
+    mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/todos" "$CLAUDE_HOME/plugins"
     # Copy only config files (not debug/history/cache which are huge)
-    for f in settings.json; do
+    for f in settings.json stats-cache.json; do
         [[ -f "$CLAUDE_MOUNT/$f" ]] && cp "$CLAUDE_MOUNT/$f" "$CLAUDE_HOME/$f"
     done
     [[ -d "$CLAUDE_MOUNT/skills" ]] && cp -r "$CLAUDE_MOUNT/skills" "$CLAUDE_HOME/skills"
-    mkdir -p "$CLAUDE_HOME/debug" "$CLAUDE_HOME/todos" "$CLAUDE_HOME/plugins"
-    # Copy blocklist if present
     [[ -f "$CLAUDE_MOUNT/plugins/blocklist.json" ]] && cp "$CLAUDE_MOUNT/plugins/blocklist.json" "$CLAUDE_HOME/plugins/"
-else
-    rm -f "$CLAUDE_HOME/.write-test" 2>/dev/null
 fi
 
 # ---------------------------------------------------------------------------

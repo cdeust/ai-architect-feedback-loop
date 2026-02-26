@@ -11,5 +11,5 @@ services:
       - ./config:/app/config
       - ./runs:/app/runs
       - ./logs:/app/logs
-      - ${HOME}/.claude:/home/pipeline/.claude:ro
+      - ${HOME}/.claude:/home/pipeline/.claude-host:ro
       - ${HOME}/.aiprd:/home/pipeline/.aiprd:ro
