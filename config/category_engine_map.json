@@ -2,37 +2,52 @@
   "description": "Maps finding categories to affected modules, interfaces, and services",
   "mappings": {
     "api_change": {
-      "primary_engines": ["api"],
-      "related_ports": [],
-      "key_services": []
-    },
-    "dependency_change": {
-      "primary_engines": ["core"],
+      "primary_engines": [
+        "scripts"
+      ],
       "related_ports": [],
       "key_services": []
     },
     "behavior_change": {
-      "primary_engines": ["core"],
+      "primary_engines": [
+        "scripts"
+      ],
+      "related_ports": [],
+      "key_services": []
+    },
+    "dependency_change": {
+      "primary_engines": [
+        "scripts",
+        "config"
+      ],
       "related_ports": [],
       "key_services": []
     },
     "config_change": {
-      "primary_engines": ["core"],
+      "primary_engines": [
+        "config"
+      ],
       "related_ports": [],
       "key_services": []
     },
     "schema_change": {
-      "primary_engines": ["api"],
+      "primary_engines": [
+        "scripts"
+      ],
       "related_ports": [],
       "key_services": []
     },
     "performance_change": {
-      "primary_engines": ["core", "api"],
+      "primary_engines": [
+        "scripts"
+      ],
       "related_ports": [],
       "key_services": []
     },
     "security_change": {
-      "primary_engines": ["core"],
+      "primary_engines": [
+        "scripts"
+      ],
       "related_ports": [],
       "key_services": []
     }

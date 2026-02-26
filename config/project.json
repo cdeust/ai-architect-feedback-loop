@@ -1,16 +1,27 @@
 {
-  "language": "kotlin",
-  "source_extensions": [".kt", ".kts"],
-  "test_file_patterns": ["**/src/test/**/*.kt", "**/src/androidTest/**/*.kt"],
-  "test_dir_name": "src/test",
+  "language": "python",
+  "source_extensions": [
+    ".py"
+  ],
+  "test_file_patterns": [
+    "**/test_*.py",
+    "**/*_test.py"
+  ],
+  "test_dir_name": "tests",
   "module_prefix": "",
   "modules_dir": ".",
   "domain_module": null,
   "interface_suffix": null,
-  "base_branch": "develop-ui",
-  "build_command": "./gradlew assembleDebug",
-  "test_command": "./gradlew testDebugUnitTest",
+  "base_branch": "feat/docker-containerization",
+  "build_command": "make build",
+  "test_command": "make test",
   "deploy_command": null,
-  "required_tools": ["git", "jq", "claude"],
+  "required_tools": [
+    "python3",
+    "git",
+    "gh",
+    "jq",
+    "claude"
+  ],
   "contract_extractor": null
 }

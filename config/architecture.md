@@ -1,18 +1,22 @@
-# Project Architecture
+# AI Architect Feedback Loop — Architecture
 
-Describe your project's architecture here. This text is injected into AI prompts
-so Claude understands your codebase structure when analyzing impact, designing
-integrations, and implementing changes.
+## Overview
+A 14-stage autonomous product improvement pipeline for Claude Code.
+Stages 4, 8, 9 are Apple Intelligence only (skipped in CLI/Docker).
 
 ## Module Structure
-- Describe your modules/packages and their responsibilities
-- Describe dependency relationships
+- **scripts/** — Stage scripts (stage1 through stage14), validators, utilities
+- **config/** — Pipeline configuration (pipeline.yml, thresholds, engine graph)
+- **prompts/** — AI prompt templates for each stage
+- **.claude/commands/** — Slash command definitions (/run-pipeline)
 
 ## Key Patterns
-- Describe architectural patterns (layered, hexagonal, microservices, etc.)
-- Describe interface/contract patterns
+- Shell scripts orchestrate stages; Python scripts handle validation/analysis
+- artifact_paths.sh provides standardized artifact resolution with backward compat
+- retry_orchestrator.sh cycles implementation→gates→verification (stages 7→10→11)
+- resolve_config.py generates individual config files from unified pipeline.yml
 
 ## Constraints
-- What files should never be created/modified
-- What patterns are prohibited
-- What conventions must be followed
+- All shell scripts use `set -euo pipefail` and structured JSON logging
+- Python scripts use stdlib only (no pip dependencies except PyYAML for config)
+- Prohibited patterns (TODO, FIXME, HACK, etc.) enforced by stage 10 gates

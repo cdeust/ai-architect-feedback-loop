@@ -10,7 +10,7 @@ project:
   modules_dir: .
   domain_module: null
   interface_suffix: null
-  base_branch: main
+  base_branch: feat/docker-containerization
   build_command: make build
   test_command: make test
   deploy_command: null
@@ -24,40 +24,69 @@ project:
 license:
   key_file: ~/.aiprd/license-key
   validate_on_run: true
-architecture: '# Project Architecture
+architecture: |
+  # AI Architect Feedback Loop — Architecture
 
+  ## Overview
+  A 14-stage autonomous product improvement pipeline for Claude Code.
+  Stages 4, 8, 9 are Apple Intelligence only (skipped in CLI/Docker).
 
-  Describe your project architecture here.
+  ## Module Structure
+  - **scripts/** — Stage scripts (stage1 through stage14), validators, utilities
+  - **config/** — Pipeline configuration (pipeline.yml, thresholds, engine graph)
+  - **prompts/** — AI prompt templates for each stage
+  - **.claude/commands/** — Slash command definitions (/run-pipeline)
 
-  '
-modules: {}
+  ## Key Patterns
+  - Shell scripts orchestrate stages; Python scripts handle validation/analysis
+  - artifact_paths.sh provides standardized artifact resolution with backward compat
+  - retry_orchestrator.sh cycles implementation→gates→verification (stages 7→10→11)
+  - resolve_config.py generates individual config files from unified pipeline.yml
+
+  ## Constraints
+  - All shell scripts use `set -euo pipefail` and structured JSON logging
+  - Python scripts use stdlib only (no pip dependencies except PyYAML for config)
+  - Prohibited patterns (TODO, FIXME, HACK, etc.) enforced by stage 10 gates
+modules:
+  scripts:
+    role: shared_infrastructure
+    feeds: []
+    fed_by: []
+  config:
+    role: shared_infrastructure
+    feeds: [scripts]
+    fed_by: []
+  prompts:
+    role: domain_logic
+    feeds: [scripts]
+    fed_by: []
 categories:
   api_change:
-    primary_engines: &id001 []
+    primary_engines: [scripts]
     related_ports: []
     key_services: []
   behavior_change:
-    primary_engines: *id001
+    primary_engines: [scripts]
     related_ports: []
     key_services: []
   dependency_change:
-    primary_engines: *id001
+    primary_engines: [scripts, config]
     related_ports: []
     key_services: []
   config_change:
-    primary_engines: *id001
+    primary_engines: [config]
     related_ports: []
     key_services: []
   schema_change:
-    primary_engines: *id001
+    primary_engines: [scripts]
     related_ports: []
     key_services: []
   performance_change:
-    primary_engines: []
+    primary_engines: [scripts]
     related_ports: []
     key_services: []
   security_change:
-    primary_engines: *id001
+    primary_engines: [scripts]
     related_ports: []
     key_services: []
 git:

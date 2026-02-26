@@ -1,20 +1,24 @@
 {
   "description": "Module dependency graph. Define your modules with roles and relationships.",
   "engines": {
-    "core": {
+    "scripts": {
       "role": "shared_infrastructure",
-      "feeds": ["api", "worker"],
+      "feeds": [],
       "fed_by": []
     },
-    "api": {
-      "role": "api_layer",
-      "feeds": [],
-      "fed_by": ["core"]
+    "config": {
+      "role": "shared_infrastructure",
+      "feeds": [
+        "scripts"
+      ],
+      "fed_by": []
     },
-    "worker": {
-      "role": "background_processing",
-      "feeds": [],
-      "fed_by": ["core"]
+    "prompts": {
+      "role": "domain_logic",
+      "feeds": [
+        "scripts"
+      ],
+      "fed_by": []
     }
   }
 }
