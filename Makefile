@@ -406,15 +406,15 @@ docker-build: ## Build the Docker image with all dependencies
 
 .PHONY: docker-run
 docker-run: ## Run full pipeline in Docker (set TARGET_REPO)
-	docker run --rm -it \
+	docker run --rm \
 		-v $${TARGET_REPO:?Set TARGET_REPO to your product repo}:/workspace/target:ro \
 		-v $$(pwd)/config:/app/config \
 		-v $$(pwd)/runs:/app/runs \
 		-v $$(pwd)/logs:/app/logs \
 		-v $$HOME/.claude:/home/pipeline/.claude:ro \
-		-v $$HOME/.config/gh:/home/pipeline/.config/gh:ro \
 		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
-		-e ANTHROPIC_API_KEY=$${ANTHROPIC_API_KEY:-} \
+		-e CLAUDE_CODE_OAUTH_TOKEN=$${CLAUDE_CODE_OAUTH_TOKEN:-} \
+		-e GH_TOKEN=$${GH_TOKEN:-} \
 		$(DOCKER_IMAGE):$(DOCKER_TAG)
 
 .PHONY: docker-setup
@@ -427,10 +427,10 @@ docker-setup: ## Run interactive setup wizard in Docker
 
 .PHONY: docker-health
 docker-health: ## Run health check in Docker
-	docker run --rm -it \
+	docker run --rm \
 		-v $${TARGET_REPO:?Set TARGET_REPO to your product repo}:/workspace/target:ro \
 		-v $$(pwd)/config:/app/config \
-		-v $$HOME/.config/gh:/home/pipeline/.config/gh:ro \
+		-e GH_TOKEN=$${GH_TOKEN:-} \
 		$(DOCKER_IMAGE):$(DOCKER_TAG) health
 
 .PHONY: docker-shell
@@ -441,8 +441,9 @@ docker-shell: ## Open a shell inside the Docker container
 		-v $$(pwd)/runs:/app/runs \
 		-v $$(pwd)/logs:/app/logs \
 		-v $$HOME/.claude:/home/pipeline/.claude:ro \
-		-v $$HOME/.config/gh:/home/pipeline/.config/gh:ro \
 		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
+		-e CLAUDE_CODE_OAUTH_TOKEN=$${CLAUDE_CODE_OAUTH_TOKEN:-} \
+		-e GH_TOKEN=$${GH_TOKEN:-} \
 		$(DOCKER_IMAGE):$(DOCKER_TAG) shell
 
 # ============================================================================

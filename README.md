@@ -42,7 +42,7 @@ TARGET_REPO=/path/to/your-product make docker-run            # run pipeline
 
 The container creates a **local clone** of your repo (original is mounted read-only), installs pre-commit hooks for quality gates, and runs Claude Code with `--dangerously-skip-permissions` (safe inside the container).
 
-Requires: Docker, `~/.claude` (Claude auth), `~/.config/gh` (GitHub auth), `~/.aiprd/license-key`.
+Requires: Docker, `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token`), `GH_TOKEN` (GitHub auth), `~/.aiprd/license-key`.
 
 ## What you get
 

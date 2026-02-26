@@ -4,7 +4,7 @@ services:
     image: ai-architect-pipeline:latest
     container_name: ai-architect-pipeline
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       - GH_TOKEN=${GH_TOKEN:-}
     volumes:
       - ${TARGET_REPO:?Set TARGET_REPO}:/workspace/target:ro
