@@ -327,14 +327,12 @@ print(' '.join(sorted(primary)))
     echo "$IMPACT_REPORT_SCHEMA" > "$TMP_DIR/schema.txt"
     echo "$CATEGORY_MAPPING" > "$TMP_DIR/category_mapping_${PROCESSED}.txt"
 
-    ARCHITECTURE_MD="$SCRIPT_DIR/../config/architecture.md"
-
     python3 - "$PROMPT_TEMPLATE_PATH" "$ENGINE_GRAPH" "$TMP_DIR/contracts.md" \
         "$FINDING_FILE" "$TMP_DIR/schema.txt" "$TMP_DIR/category_mapping_${PROCESSED}.txt" \
-        "$CONFIG_PATH" "$ARCHITECTURE_MD" "$TMP_DIR/prompt_${PROCESSED}.md" <<'PYEOF'
+        "$CONFIG_PATH" "$TMP_DIR/prompt_${PROCESSED}.md" <<'PYEOF'
 import json, sys
 
-template_path, engine_graph_path, contracts_path, finding_path, schema_path, cat_map_path, config_path, arch_path, output_path = sys.argv[1:10]
+template_path, engine_graph_path, contracts_path, finding_path, schema_path, cat_map_path, config_path, output_path = sys.argv[1:9]
 
 with open(template_path) as f:
     template = f.read()
@@ -348,12 +346,6 @@ with open(schema_path) as f:
     schema = f.read()
 with open(cat_map_path) as f:
     category_mapping = f.read()
-arch = ""
-try:
-    with open(arch_path) as f:
-        arch = f.read()
-except FileNotFoundError:
-    pass
 
 # Read thresholds for prompt injection
 engines_min = 2
@@ -368,7 +360,6 @@ if config_path:
         pass
 
 result = template
-result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", arch)
 result = result.replace("{{ENGINE_GRAPH}}", engine_graph)
 result = result.replace("{{CATEGORY_ENGINE_MAP}}", category_mapping)
 result = result.replace("{{ENGINE_CONTRACTS}}", contracts)
@@ -404,8 +395,50 @@ PYEOF
     # Extract JSON from Claude output
     REPORT_FILE=$(artifact_impact "$OUTPUT_DIR" "$FINDING_ID")
     EXTRACT_EXIT=0
-    python3 "$SCRIPT_DIR/extract_json_from_ai.py" "$RAW_OUTPUT" "$REPORT_FILE" \
-        || EXTRACT_EXIT=$?
+    python3 - "$RAW_OUTPUT" "$REPORT_FILE" <<'PYEOF' || EXTRACT_EXIT=$?
+import json, sys
+
+raw_file, report_file = sys.argv[1], sys.argv[2]
+
+with open(raw_file, 'r') as f:
+    raw = f.read()
+
+# Try parsing the raw output as structured JSON first
+try:
+    data = json.loads(raw)
+    # If it's the Claude output format, extract the result text
+    if isinstance(data, dict) and "result" in data:
+        text = data["result"]
+    elif isinstance(data, list):
+        # Find the last assistant text block
+        text = ""
+        for msg in data:
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "")
+                elif isinstance(content, str):
+                    text = content
+    else:
+        text = raw
+except json.JSONDecodeError:
+    text = raw
+
+# Find JSON object in text
+start = text.find('{')
+end = text.rfind('}')
+if start == -1 or end == -1:
+    print("ERROR: No JSON object found in Claude output", file=sys.stderr)
+    sys.exit(1)
+
+report = json.loads(text[start:end+1])
+
+with open(report_file, 'w') as f:
+    json.dump(report, f, indent=2)
+    f.write('\n')
+PYEOF
 
     if [[ "$EXTRACT_EXIT" -ne 0 ]]; then
         log "ERROR" "Failed to extract JSON from Claude output for $FINDING_ID"

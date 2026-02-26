@@ -549,32 +549,26 @@ print(chr(10).join(lines))
     echo "$BUILD_CMDS" > "$TMP_DIR/build_cmds.txt"
     cat "$INTEGRATION_PLAN" > "$TMP_DIR/plan_content.txt"
 
-    ARCHITECTURE_MD="$SCRIPT_DIR/../config/architecture.md"
-
     python3 - "$PROMPT_TEMPLATE_PATH" "$TMP_DIR/engine_graph_text.txt" \
         "$TMP_DIR/claude_md.txt" "$TMP_DIR/prd_content.txt" \
         "$TMP_DIR/plan_content.txt" "$TMP_DIR/must_change.txt" \
         "$TMP_DIR/must_not_change.txt" "$TMP_DIR/contracts_${FINDING_ID}.md" \
-        "$TMP_DIR/build_cmds.txt" "$FINDING_ID" "$ARCHITECTURE_MD" \
+        "$TMP_DIR/build_cmds.txt" "$FINDING_ID" \
         "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
 import sys
 
 (template_path, graph_path, claude_md_path, prd_path,
  plan_path, must_change_path, must_not_change_path,
- contracts_path, build_cmds_path, finding_id, arch_path, output_path) = sys.argv[1:13]
+ contracts_path, build_cmds_path, finding_id, output_path) = sys.argv[1:12]
 
 with open(template_path) as f:
     template = f.read()
 
 def read_file(p):
-    try:
-        with open(p) as f:
-            return f.read()
-    except FileNotFoundError:
-        return ""
+    with open(p) as f:
+        return f.read()
 
 result = template
-result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", read_file(arch_path))
 result = result.replace("{{ENGINE_GRAPH}}", read_file(graph_path))
 result = result.replace("{{CLAUDE_MD_RULES}}", read_file(claude_md_path))
 result = result.replace("{{UPGRADE_PRD}}", read_file(prd_path))

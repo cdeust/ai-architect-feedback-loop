@@ -340,14 +340,12 @@ print(' '.join(report.get('affected_engines', [])))
     echo "$FILE_TREE" > "$TMP_DIR/file_tree_${FINDING_ID}.txt"
     echo "$INTEGRATION_PLAN_SCHEMA" > "$TMP_DIR/schema.txt"
 
-    ARCHITECTURE_MD="$SCRIPT_DIR/../config/architecture.md"
-
     python3 - "$PROMPT_TEMPLATE_PATH" "$IMPACT_REPORT" "$TMP_DIR/contracts_${FINDING_ID}.md" \
         "$TMP_DIR/claude_md_rules.txt" "$TMP_DIR/file_tree_${FINDING_ID}.txt" \
-        "$TMP_DIR/schema.txt" "$ARCHITECTURE_MD" "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
+        "$TMP_DIR/schema.txt" "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
 import sys
 
-template_path, impact_path, contracts_path, claude_md_path, file_tree_path, schema_path, arch_path, output_path = sys.argv[1:9]
+template_path, impact_path, contracts_path, claude_md_path, file_tree_path, schema_path, output_path = sys.argv[1:8]
 
 with open(template_path) as f:
     template = f.read()
@@ -361,15 +359,8 @@ with open(file_tree_path) as f:
     file_tree = f.read()
 with open(schema_path) as f:
     schema = f.read()
-arch = ""
-try:
-    with open(arch_path) as f:
-        arch = f.read()
-except FileNotFoundError:
-    pass
 
 result = template
-result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", arch)
 result = result.replace("{{CLAUDE_MD_RULES}}", claude_md)
 result = result.replace("{{IMPACT_REPORT}}", impact_report)
 result = result.replace("{{ENGINE_CONTRACTS}}", contracts)
@@ -401,8 +392,47 @@ PYEOF
     # Extract JSON from Claude output
     PLAN_FILE=$(artifact_integration "$OUTPUT_DIR" "$FINDING_ID")
     EXTRACT_EXIT=0
-    python3 "$SCRIPT_DIR/extract_json_from_ai.py" "$RAW_OUTPUT" "$PLAN_FILE" \
-        || EXTRACT_EXIT=$?
+    python3 - "$RAW_OUTPUT" "$PLAN_FILE" <<'PYEOF' || EXTRACT_EXIT=$?
+import json, sys
+
+raw_file, plan_file = sys.argv[1], sys.argv[2]
+
+with open(raw_file, 'r') as f:
+    raw = f.read()
+
+# Try parsing structured output
+try:
+    data = json.loads(raw)
+    if isinstance(data, dict) and "result" in data:
+        text = data["result"]
+    elif isinstance(data, list):
+        text = ""
+        for msg in data:
+            if isinstance(msg, dict) and msg.get("role") == "assistant":
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "")
+                elif isinstance(content, str):
+                    text = content
+    else:
+        text = raw
+except json.JSONDecodeError:
+    text = raw
+
+start = text.find('{')
+end = text.rfind('}')
+if start == -1 or end == -1:
+    print("ERROR: No JSON object found in Claude output", file=sys.stderr)
+    sys.exit(1)
+
+plan = json.loads(text[start:end+1])
+
+with open(plan_file, 'w') as f:
+    json.dump(plan, f, indent=2)
+    f.write('\n')
+PYEOF
 
     if [[ "$EXTRACT_EXIT" -ne 0 ]]; then
         log "ERROR" "Failed to extract JSON for $FINDING_ID"
@@ -415,17 +445,11 @@ PYEOF
     VALIDATION_FILE=$(artifact_validation3 "$OUTPUT_DIR" "$FINDING_ID")
     VALIDATE_EXIT=0
 
-    VALIDATE_ARGS=(
-        --plan "$PLAN_FILE"
-        --packages-dir "$PACKAGES_DIR"
-        --contracts "$TMP_DIR/contracts.json"
-        --output "$VALIDATION_FILE"
-    )
-    if [[ -f "$PROJECT_CONFIG" ]]; then
-        VALIDATE_ARGS+=(--project-config "$PROJECT_CONFIG")
-    fi
-
-    python3 "$SCRIPT_DIR/validate_integration_plan.py" "${VALIDATE_ARGS[@]}" > /dev/null 2>&1 || VALIDATE_EXIT=$?
+    python3 "$SCRIPT_DIR/validate_integration_plan.py" \
+        --plan "$PLAN_FILE" \
+        --packages-dir "$PACKAGES_DIR" \
+        --contracts "$TMP_DIR/contracts.json" \
+        --output "$VALIDATION_FILE" > /dev/null 2>&1 || VALIDATE_EXIT=$?
 
     VALIDATION_RESULT=$(python3 -c "import json; print(json.load(open('$VALIDATION_FILE')).get('result', 'UNKNOWN'))" 2>/dev/null || echo "UNKNOWN")
 
