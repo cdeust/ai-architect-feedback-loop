@@ -400,6 +400,10 @@ clean: ## Remove pipeline run artifacts and logs
 DOCKER_IMAGE := ai-architect-pipeline
 DOCKER_TAG   := latest
 
+# Auto-extract Claude Code OAuth token from macOS Keychain
+CLAUDE_CODE_OAUTH_TOKEN ?= $(shell security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null)
+GH_TOKEN ?= $(shell gh auth token 2>/dev/null)
+
 .PHONY: docker-build
 docker-build: ## Build the Docker image with all dependencies
 	docker build -t $(DOCKER_IMAGE):$(DOCKER_TAG) .

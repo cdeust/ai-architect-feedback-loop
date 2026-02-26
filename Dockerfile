@@ -39,9 +39,9 @@ RUN pip install --no-cache-dir pyyaml
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm
 
-# Runtime system packages
+# Runtime system packages (ripgrep needed by Claude Code CLI)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        git jq make curl ca-certificates \
+        git jq make curl ca-certificates ripgrep \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Node.js runtime and Claude Code CLI from builder
@@ -55,6 +55,17 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/pytho
 
 # Copy gh CLI
 COPY --from=builder /usr/bin/gh /usr/bin/gh
+
+# Claude Code CLI expects ripgrep at a vendor path — create symlink
+RUN ARCH=$(dpkg --print-architecture) && \
+    ARCH_MAP="amd64:x64-linux arm64:arm64-linux" && \
+    for pair in $ARCH_MAP; do \
+        if [ "${pair%%:*}" = "$ARCH" ]; then \
+            RG_DIR="/usr/bin/vendor/ripgrep/${pair##*:}"; \
+            mkdir -p "$RG_DIR"; \
+            ln -sf /usr/bin/rg "$RG_DIR/rg"; \
+        fi; \
+    done
 
 # Create non-root pipeline user
 RUN useradd -m -u 1000 -s /bin/bash pipeline \
