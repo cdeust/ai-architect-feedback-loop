@@ -17,10 +17,14 @@ Covers:
   UT-VPO-012: Multiple failures — returns all failing checks
   UT-VPO-013: Missing metrics file → FAIL
   UT-VPO-014: Malformed metrics → FAIL
+  UT-VPO-015: output_format='json' emits one JSON line per check
+  UT-VPO-016: invalid output_format raises ValueError
 
 Uses synthetic data — no external dependencies.
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -369,6 +373,35 @@ class TestValidatePrdOutput(unittest.TestCase):
             self.assertEqual(result, "REJECTED")
             score_check = next(c for c in checks if c["check"] == "verification_score_exists")
             self.assertEqual(score_check["result"], "FAIL")
+
+    def test_json_format_emits_lines(self):
+        """UT-VPO-015: output_format='json' emits one JSON line per check."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prd_dir = create_prd_dir(tmpdir)
+            metrics = make_metrics(0.90)
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                result, checks, _ = vpo.validate(
+                    prd_dir, INTEGRATION_PLAN, ENGINE_GRAPH, metrics, CONFIG,
+                    output_format="json",
+                )
+            lines = [l for l in stdout.getvalue().strip().split("\n") if l]
+            self.assertEqual(len(lines), len(checks))
+            for line in lines:
+                record = json.loads(line)
+                self.assertEqual(set(record.keys()), {"code", "message", "context"})
+
+    def test_invalid_output_format_raises(self):
+        """UT-VPO-016: invalid output_format raises ValueError."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prd_dir = create_prd_dir(tmpdir)
+            metrics = make_metrics(0.90)
+            with self.assertRaises(ValueError) as ctx:
+                vpo.validate(
+                    prd_dir, INTEGRATION_PLAN, ENGINE_GRAPH, metrics, CONFIG,
+                    output_format="xml",
+                )
+            self.assertIn("xml", str(ctx.exception))
 
 
 if __name__ == "__main__":

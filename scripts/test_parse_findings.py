@@ -12,10 +12,13 @@ Covers:
   UT-007 (AC-E1-001): Rejects findings with unknown relevance category
   UT-008 (AC-E1-002): Custom threshold via --threshold overrides default
   UT-009 (AC-E1-001): Stats block shows total, filtered, categories_matched
+  UT-PF-010: --output-format json emits ErrorRecord summary to stdout
 
 Uses temp files with synthetic TV output — no external dependencies.
 """
 
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -480,6 +483,101 @@ class TestFilterFindings(unittest.TestCase):
         filtered, cats = pf.filter_findings(findings, 0.5, ALL_CATEGORIES)
         self.assertEqual(len(filtered), 1)
         self.assertEqual(filtered[0]["id"], "f01")
+
+
+# ---------------------------------------------------------------------------
+# UT-PF-010: --output-format json emits ErrorRecord summary
+# ---------------------------------------------------------------------------
+
+class TestJsonOutputFormat(unittest.TestCase):
+    """UT-PF-010: --output-format json emits ErrorRecord summary to stdout."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def _run_main_json(self, findings):
+        """Run main() with --output-format json, return (stdout_lines, output_data)."""
+        input_path = write_json(self.tmpdir, "tv_input.json", make_tv_output(findings))
+        output_path = os.path.join(self.tmpdir, "findings_json.json")
+        argv = ["--input", input_path, "--output", output_path,
+                "--threshold", "0.5", "--output-format", "json"]
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            pf.main(argv)
+        with open(output_path) as f:
+            output_data = json.load(f)
+        lines = [l for l in stdout.getvalue().strip().split("\n") if l]
+        return lines, output_data
+
+    def test_json_format_emits_one_line(self):
+        findings = [make_finding("f01", "retrieval", 0.9)]
+        lines, _ = self._run_main_json(findings)
+        self.assertEqual(len(lines), 1)
+
+    def test_json_format_line_is_valid_json(self):
+        findings = [make_finding("f01", "retrieval", 0.9)]
+        lines, _ = self._run_main_json(findings)
+        record = json.loads(lines[0])
+        self.assertIsInstance(record, dict)
+
+    def test_json_format_record_has_exact_keys(self):
+        findings = [make_finding("f01", "retrieval", 0.9)]
+        lines, _ = self._run_main_json(findings)
+        record = json.loads(lines[0])
+        self.assertEqual(set(record.keys()), {"code", "message", "context"})
+
+    def test_json_format_code_is_parse_summary(self):
+        findings = [make_finding("f01", "retrieval", 0.9)]
+        lines, _ = self._run_main_json(findings)
+        record = json.loads(lines[0])
+        self.assertEqual(record["code"], "parse_summary")
+
+    def test_json_format_context_has_counts(self):
+        findings = [
+            make_finding("f01", "retrieval", 0.9),
+            make_finding("f02", "retrieval", 0.1),  # below threshold
+        ]
+        lines, _ = self._run_main_json(findings)
+        record = json.loads(lines[0])
+        ctx = record["context"]
+        self.assertIn("total_findings", ctx)
+        self.assertIn("filtered_findings", ctx)
+        self.assertEqual(ctx["total_findings"], 2)
+        self.assertEqual(ctx["filtered_findings"], 1)
+
+    def test_text_format_no_error_record(self):
+        """Default text format does not emit ErrorRecord lines."""
+        findings = [make_finding("f01", "retrieval", 0.9)]
+        input_path = write_json(self.tmpdir, "tv_text.json", make_tv_output(findings))
+        output_path = os.path.join(self.tmpdir, "findings_text.json")
+        argv = ["--input", input_path, "--output", output_path, "--threshold", "0.5"]
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            pf.main(argv)
+        output_line = stdout.getvalue().strip()
+        # text format emits a plain JSON summary (not an ErrorRecord)
+        summary = json.loads(output_line)
+        self.assertIn("stage", summary)
+        self.assertNotIn("code", summary)
+
+    def test_json_format_via_cli(self):
+        """Verify --output-format json works via subprocess."""
+        findings = [make_finding("f01", "retrieval", 0.9)]
+        input_path = write_json(self.tmpdir, "tv_cli.json", make_tv_output(findings))
+        output_path = os.path.join(self.tmpdir, "findings_cli.json")
+        script = os.path.join(os.path.dirname(__file__), "parse_findings.py")
+
+        result = subprocess.run(
+            [sys.executable, script,
+             "--input", input_path,
+             "--output", output_path,
+             "--threshold", "0.5",
+             "--output-format", "json"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0)
+        record = json.loads(result.stdout.strip())
+        self.assertEqual(record["code"], "parse_summary")
 
 
 if __name__ == "__main__":

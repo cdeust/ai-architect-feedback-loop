@@ -19,7 +19,21 @@ import os
 import sys
 from datetime import datetime, timezone
 
+# Sibling script import — works both when run as script and when imported as module
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from validate_impact_report import (  # noqa: E402
+    OUTPUT_FORMAT_JSON,
+    OUTPUT_FORMAT_TEXT,
+    VALID_OUTPUT_FORMATS,
+    ErrorRecord,
+    emit_json_line,
+    format_error_record,
+)
+
 PIPELINE_VERSION = "1.0"
+PARSE_SUMMARY_CODE = "parse_summary"
 
 DEFAULT_THRESHOLD = 0.5
 DEFAULT_CATEGORIES = [
@@ -137,31 +151,54 @@ def build_output(filtered_findings, total_count, threshold, categories_matched):
     }
 
 
+def _emit_summary_as_json(output, total_count, threshold, categories_matched):
+    """Emit parse summary as a newline-delimited ErrorRecord JSON line."""
+    filtered_count = len(output["findings"])
+    message = f"filtered {filtered_count} of {total_count} findings at threshold {threshold}"
+    record = format_error_record(
+        code=PARSE_SUMMARY_CODE,
+        message=message,
+        context={
+            "total_findings": total_count,
+            "filtered_findings": filtered_count,
+            "threshold": threshold,
+            "categories_matched": categories_matched,
+        },
+    )
+    print(emit_json_line(record))
+
+
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+def _build_arg_parser():
+    """Build and return the argument parser for this script."""
+    parser = argparse.ArgumentParser(
+        description="Transform Technical Veil output into pipeline findings.json"
+    )
+    parser.add_argument("--input", required=True,
+                        help="Path to Technical Veil JSON output file")
+    parser.add_argument("--output", required=True, help="Path to write findings.json")
+    parser.add_argument("--config", default=None,
+                        help="Path to thresholds.json for category and threshold defaults")
+    parser.add_argument("--threshold", type=float, default=None,
+                        help="Override relevance score threshold (default: from config or 0.5)")
+    parser.add_argument(
+        "--output-format",
+        choices=[OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON],
+        default=OUTPUT_FORMAT_TEXT,
+        help="Output format: 'text' (default) or 'json' (newline-delimited JSON)",
+    )
+    return parser
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Transform Technical Veil output into pipeline findings.json"
-    )
-    parser.add_argument(
-        "--input", required=True,
-        help="Path to Technical Veil JSON output file"
-    )
-    parser.add_argument(
-        "--output", required=True,
-        help="Path to write findings.json"
-    )
-    parser.add_argument(
-        "--config", default=None,
-        help="Path to thresholds.json for category and threshold defaults"
-    )
-    parser.add_argument(
-        "--threshold", type=float, default=None,
-        help="Override relevance score threshold (default: from config or 0.5)"
-    )
-    args = parser.parse_args(argv)
+    args = _build_arg_parser().parse_args(argv)
 
     # Load config
     config_threshold, valid_categories = load_config(args.config)
@@ -183,15 +220,18 @@ def main(argv=None):
         json.dump(output, f, indent=2)
         f.write("\n")
 
-    print(json.dumps({
-        "stage": "parse_findings",
-        "timestamp": output["generated_at"],
-        "total_findings": total_count,
-        "filtered_findings": len(filtered),
-        "threshold": threshold,
-        "categories_matched": categories_matched,
-        "status": "complete",
-    }))
+    if args.output_format == OUTPUT_FORMAT_JSON:
+        _emit_summary_as_json(output, total_count, threshold, categories_matched)
+    else:
+        print(json.dumps({
+            "stage": "parse_findings",
+            "timestamp": output["generated_at"],
+            "total_findings": total_count,
+            "filtered_findings": len(filtered),
+            "threshold": threshold,
+            "categories_matched": categories_matched,
+            "status": "complete",
+        }))
 
 
 if __name__ == "__main__":

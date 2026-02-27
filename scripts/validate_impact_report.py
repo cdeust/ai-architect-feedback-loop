@@ -30,7 +30,26 @@ import json
 import os
 import sys
 from datetime import datetime, timezone
+from typing import Any, Dict
 
+try:
+    from typing import TypedDict
+except ImportError:
+    from typing_extensions import TypedDict  # type: ignore
+
+
+# ---------------------------------------------------------------------------
+# Output format constants
+# ---------------------------------------------------------------------------
+
+OUTPUT_FORMAT_TEXT = "text"
+OUTPUT_FORMAT_JSON = "json"
+VALID_OUTPUT_FORMATS = (OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON)
+
+
+# ---------------------------------------------------------------------------
+# Validation schema constants
+# ---------------------------------------------------------------------------
 
 REQUIRED_KEYS = [
     "finding_id",
@@ -49,6 +68,37 @@ SCORING_DIMENSIONS = [
     "contract_impact",
     "test_coverage_delta",
 ]
+
+
+# ---------------------------------------------------------------------------
+# ErrorRecord schema (imported by sibling validators)
+# ---------------------------------------------------------------------------
+
+class ErrorRecord(TypedDict):
+    code: str
+    message: str
+    context: Dict[str, Any]
+
+
+def format_error_record(code: str, message: str, context: Dict[str, Any]) -> "ErrorRecord":
+    """Create a validated ErrorRecord instance."""
+    return ErrorRecord(code=code, message=message, context=context)
+
+
+def emit_json_line(record: "ErrorRecord") -> str:
+    """Serialize an ErrorRecord to a single compact JSON line."""
+    return json.dumps(record, separators=(",", ":"))
+
+
+def _emit_checks_as_json(checks):
+    """Print each check as a newline-delimited ErrorRecord JSON line."""
+    for check in checks:
+        record = format_error_record(
+            code=check["check"],
+            message=check.get("reason", check["result"]),
+            context={"result": check["result"]},
+        )
+        print(emit_json_line(record))
 
 
 # ---------------------------------------------------------------------------
@@ -231,13 +281,16 @@ def check_contract_references(report, contracts):
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Validate
 # ---------------------------------------------------------------------------
 
-def validate(report, config_path, engine_graph, contracts=None):
+def validate(report, config_path, engine_graph, contracts=None, output_format=OUTPUT_FORMAT_TEXT):
     """Run all validation checks. Returns (result, checks)."""
+    if output_format not in VALID_OUTPUT_FORMATS:
+        raise ValueError(
+            f"Invalid output_format '{output_format}'. Must be one of {VALID_OUTPUT_FORMATS}"
+        )
     score_min, engines_min = load_config(config_path)
-
     checks = [
         check_schema(report),
         check_engines_threshold(report, engines_min),
@@ -249,44 +302,54 @@ def validate(report, config_path, engine_graph, contracts=None):
         check_recommendation_coherence(report, score_min, engines_min),
         check_contract_references(report, contracts),
     ]
-
     failures = [c for c in checks if c["result"] == "FAIL"]
     result = "REJECTED" if failures else "ACCEPTED"
-
+    if output_format == OUTPUT_FORMAT_JSON:
+        _emit_checks_as_json(checks)
     return result, checks
 
 
-def main(argv=None):
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+def _build_arg_parser():
+    """Build and return the argument parser for this validator."""
     parser = argparse.ArgumentParser(
         description="Validate Stage 2 impact report against product constraints"
     )
+    parser.add_argument("--report", required=True, help="Path to impact report JSON")
+    parser.add_argument("--config", default=None, help="Path to thresholds.json")
+    parser.add_argument("--engine-graph", required=True, help="Path to engine_graph.json")
+    parser.add_argument("--contracts", default=None, help="Path to contracts.json (optional)")
+    parser.add_argument("--output", required=True, help="Path to write validation result JSON")
     parser.add_argument(
-        "--report", required=True,
-        help="Path to impact report JSON"
+        "--output-format",
+        choices=[OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON],
+        default=OUTPUT_FORMAT_TEXT,
+        help="Output format: 'text' (default) or 'json' (newline-delimited JSON)",
     )
-    parser.add_argument(
-        "--config", default=None,
-        help="Path to thresholds.json"
-    )
-    parser.add_argument(
-        "--engine-graph", required=True,
-        help="Path to engine_graph.json"
-    )
-    parser.add_argument(
-        "--contracts", default=None,
-        help="Path to contracts.json (optional)"
-    )
-    parser.add_argument(
-        "--output", required=True,
-        help="Path to write validation result JSON"
-    )
-    args = parser.parse_args(argv)
+    return parser
 
+
+def _write_validation_output(output, path):
+    """Write validation result dict to a JSON file."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(output, f, indent=2)
+        f.write("\n")
+
+
+def main(argv=None):
+    args = _build_arg_parser().parse_args(argv)
     report = load_json(args.report)
     engine_graph = load_json(args.engine_graph)
     contracts = load_json(args.contracts) if args.contracts else None
 
-    result, checks = validate(report, args.config, engine_graph, contracts)
+    result, checks = validate(
+        report, args.config, engine_graph, contracts,
+        output_format=args.output_format,
+    )
 
     output = {
         "stage": "validate_impact_report",
@@ -295,11 +358,7 @@ def main(argv=None):
         "result": result,
         "checks": checks,
     }
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with open(args.output, "w") as f:
-        json.dump(output, f, indent=2)
-        f.write("\n")
+    _write_validation_output(output, args.output)
 
     print(json.dumps({
         "stage": "validate_impact_report",

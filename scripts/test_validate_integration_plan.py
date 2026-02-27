@@ -12,10 +12,14 @@ Covers:
   UT-VIP-007: REJECTED — port protocol change without SharedUtilities modification
   UT-VIP-008: Constraint flags — false flags rejected
   UT-VIP-009: Test file location — misplaced test files
+  UT-VIP-010: output_format='json' emits one JSON line per check
+  UT-VIP-011: invalid output_format raises ValueError
 
 Uses synthetic data — no external dependencies.
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -175,7 +179,7 @@ class TestRejectedNoTouchpoints(unittest.TestCase):
         self.assertEqual(result, "REJECTED")
         check = next(c for c in checks if c["check"] == "cross_engine_connections")
         self.assertEqual(check["result"], "FAIL")
-        self.assertIn("single-engine", check["reason"])
+        self.assertIn("multi-engine", check["reason"])
 
 
 # ---------------------------------------------------------------------------
@@ -329,6 +333,57 @@ class TestSchemaChecks(unittest.TestCase):
         self.assertEqual(result, "REJECTED")
         check = next(c for c in checks if c["check"] == "schema_completeness")
         self.assertEqual(check["result"], "FAIL")
+
+
+# ---------------------------------------------------------------------------
+# UT-VIP-010 through UT-VIP-011: output_format parameter
+# ---------------------------------------------------------------------------
+
+class TestJsonOutputFormat(unittest.TestCase):
+    """UT-VIP-010: output_format='json' emits one JSON line per check."""
+
+    def test_json_format_emits_lines(self):
+        plan = make_valid_plan()
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vip.validate(plan, output_format="json")
+        lines = [l for l in stdout.getvalue().strip().split("\n") if l]
+        self.assertGreater(len(lines), 0)
+
+    def test_json_line_count_matches_checks(self):
+        plan = make_valid_plan()
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result, checks = vip.validate(plan, output_format="json")
+        lines = [l for l in stdout.getvalue().strip().split("\n") if l]
+        self.assertEqual(len(lines), len(checks))
+
+    def test_json_records_have_exact_keys(self):
+        plan = make_valid_plan()
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vip.validate(plan, output_format="json")
+        for line in stdout.getvalue().strip().split("\n"):
+            if line:
+                record = json.loads(line)
+                self.assertEqual(set(record.keys()), {"code", "message", "context"})
+
+    def test_text_format_no_json_lines(self):
+        plan = make_valid_plan()
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vip.validate(plan, output_format="text")
+        self.assertEqual(stdout.getvalue(), "")
+
+
+class TestInvalidOutputFormat(unittest.TestCase):
+    """UT-VIP-011: invalid output_format raises ValueError."""
+
+    def test_invalid_format_raises(self):
+        plan = make_valid_plan()
+        with self.assertRaises(ValueError) as ctx:
+            vip.validate(plan, output_format="xml")
+        self.assertIn("xml", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -35,6 +35,20 @@ import re
 import sys
 from datetime import datetime, timezone
 
+# Sibling script import — works both when run as script and when imported as module
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from validate_impact_report import (  # noqa: E402
+    OUTPUT_FORMAT_JSON,
+    OUTPUT_FORMAT_TEXT,
+    VALID_OUTPUT_FORMATS,
+    ErrorRecord,
+    _emit_checks_as_json,
+    emit_json_line,
+    format_error_record,
+)
+
 
 # ---------------------------------------------------------------------------
 # Loading
@@ -247,8 +261,13 @@ def check_architecture_in_tech_spec(prd_dir):
 # Validate
 # ---------------------------------------------------------------------------
 
-def validate(prd_dir, integration_plan, engine_graph, metrics, config):
+def validate(prd_dir, integration_plan, engine_graph, metrics, config,
+             output_format=OUTPUT_FORMAT_TEXT):
     """Run all validation checks. Returns (result, checks, finding_id)."""
+    if output_format not in VALID_OUTPUT_FORMATS:
+        raise ValueError(
+            f"Invalid output_format '{output_format}'. Must be one of {VALID_OUTPUT_FORMATS}"
+        )
     threshold = config.get("stage_5", {}).get("prd_quality_minimum",
                 config.get("stage_4", {}).get("prd_quality_minimum", 0.85))
     affected_engines = integration_plan.get("affected_engines", []) if integration_plan else []
@@ -266,64 +285,72 @@ def validate(prd_dir, integration_plan, engine_graph, metrics, config):
         check_test_ids(prd_dir),
         check_architecture_in_tech_spec(prd_dir),
     ]
-
     failures = [c for c in checks if c["result"] == "FAIL"]
     result = "REJECTED" if failures else "ACCEPTED"
-
+    if output_format == OUTPUT_FORMAT_JSON:
+        _emit_checks_as_json(checks)
     return result, checks, finding_id
 
 
 # ---------------------------------------------------------------------------
-# Main
+# CLI helpers
 # ---------------------------------------------------------------------------
 
-def main(argv=None):
+def _build_arg_parser():
+    """Build and return the argument parser for this validator."""
     parser = argparse.ArgumentParser(
         description="Validate Stage 5 PRD output against product constraints"
     )
+    parser.add_argument("--prd-dir", required=True,
+                        help="Directory containing the 4 PRD output files")
+    parser.add_argument("--integration-plan", required=True,
+                        help="Path to integration plan JSON")
+    parser.add_argument("--engine-graph", required=True, help="Path to engine_graph.json")
+    parser.add_argument("--metrics", required=True,
+                        help="Path to metrics JSON from extract_prd_metrics.py")
+    parser.add_argument("--config", required=True, help="Path to thresholds.json")
+    parser.add_argument("--output", required=True, help="Path to write validation result JSON")
     parser.add_argument(
-        "--prd-dir", required=True,
-        help="Directory containing the 4 PRD output files"
+        "--output-format",
+        choices=[OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON],
+        default=OUTPUT_FORMAT_TEXT,
+        help="Output format: 'text' (default) or 'json' (newline-delimited JSON)",
     )
-    parser.add_argument(
-        "--integration-plan", required=True,
-        help="Path to integration plan JSON"
-    )
-    parser.add_argument(
-        "--engine-graph", required=True,
-        help="Path to engine_graph.json"
-    )
-    parser.add_argument(
-        "--metrics", required=True,
-        help="Path to metrics JSON from extract_prd_metrics.py"
-    )
-    parser.add_argument(
-        "--config", required=True,
-        help="Path to thresholds.json"
-    )
-    parser.add_argument(
-        "--output", required=True,
-        help="Path to write validation result JSON"
-    )
-    args = parser.parse_args(argv)
+    return parser
 
+
+def _write_validation_output(output, path):
+    """Write validation result dict to a JSON file."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(output, f, indent=2)
+        f.write("\n")
+
+
+def _load_prd_inputs(args):
+    """Load and validate required input files for PRD validation."""
     integration_plan = load_json(args.integration_plan)
     if integration_plan is None:
         print("ERROR: Cannot load integration plan", file=sys.stderr)
         sys.exit(1)
-
     engine_graph = load_json(args.engine_graph)
     if engine_graph is None:
         print("ERROR: Cannot load engine graph", file=sys.stderr)
         sys.exit(1)
-
     metrics = load_json(args.metrics)
     config = load_json(args.config)
     if config is None:
         config = {"stage_5": {"prd_quality_minimum": 0.85}}
+    return integration_plan, engine_graph, metrics, config
+
+
+def main(argv=None):
+    args = _build_arg_parser().parse_args(argv)
+    integration_plan, engine_graph, metrics, config = _load_prd_inputs(args)
 
     result, checks, finding_id = validate(
-        args.prd_dir, integration_plan, engine_graph, metrics, config
+        args.prd_dir, integration_plan, engine_graph, metrics, config,
+        output_format=args.output_format,
     )
 
     output = {
@@ -333,11 +360,7 @@ def main(argv=None):
         "result": result,
         "checks": checks,
     }
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with open(args.output, "w") as f:
-        json.dump(output, f, indent=2)
-        f.write("\n")
+    _write_validation_output(output, args.output)
 
     print(json.dumps({
         "stage": "validate_prd_output",

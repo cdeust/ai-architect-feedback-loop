@@ -31,6 +31,20 @@ import os
 import sys
 from datetime import datetime, timezone
 
+# Sibling script import — works both when run as script and when imported as module
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+from validate_impact_report import (  # noqa: E402
+    OUTPUT_FORMAT_JSON,
+    OUTPUT_FORMAT_TEXT,
+    VALID_OUTPUT_FORMATS,
+    ErrorRecord,
+    _emit_checks_as_json,
+    emit_json_line,
+    format_error_record,
+)
+
 
 REQUIRED_KEYS = [
     "finding_id",
@@ -257,7 +271,6 @@ def check_test_file_location(plan, project_config=None):
                 break
         if not in_correct_package:
             # Check if it's at least in some test directory or has test_ prefix
-            import os
             basename = os.path.basename(tf)
             if not any(v in tf for v in test_dir_variants) and not basename.startswith("test_"):
                 misplaced.append(tf)
@@ -269,11 +282,16 @@ def check_test_file_location(plan, project_config=None):
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Validate
 # ---------------------------------------------------------------------------
 
-def validate(plan, packages_dir=None, contracts=None, project_config=None):
+def validate(plan, packages_dir=None, contracts=None, project_config=None,
+             output_format=OUTPUT_FORMAT_TEXT):
     """Run all validation checks. Returns (result, checks)."""
+    if output_format not in VALID_OUTPUT_FORMATS:
+        raise ValueError(
+            f"Invalid output_format '{output_format}'. Must be one of {VALID_OUTPUT_FORMATS}"
+        )
     checks = [
         check_schema(plan),
         check_no_new_source_files(plan),
@@ -285,44 +303,55 @@ def validate(plan, packages_dir=None, contracts=None, project_config=None):
         check_constraints(plan),
         check_test_file_location(plan, project_config),
     ]
-
     failures = [c for c in checks if c["result"] == "FAIL"]
     result = "REJECTED" if failures else "ACCEPTED"
-
+    if output_format == OUTPUT_FORMAT_JSON:
+        _emit_checks_as_json(checks)
     return result, checks
 
 
-def main(argv=None):
+# ---------------------------------------------------------------------------
+# CLI helpers
+# ---------------------------------------------------------------------------
+
+def _build_arg_parser():
+    """Build and return the argument parser for this validator."""
     parser = argparse.ArgumentParser(
         description="Validate Stage 3 integration plan against product constraints"
     )
+    parser.add_argument("--plan", required=True, help="Path to integration plan JSON")
+    parser.add_argument("--packages-dir", default=None,
+                        help="Path to packages/ directory for file existence checks")
+    parser.add_argument("--contracts", default=None, help="Path to contracts.json (optional)")
+    parser.add_argument("--project-config", default=None, help="Path to project.json (optional)")
+    parser.add_argument("--output", required=True, help="Path to write validation result JSON")
     parser.add_argument(
-        "--plan", required=True,
-        help="Path to integration plan JSON"
+        "--output-format",
+        choices=[OUTPUT_FORMAT_TEXT, OUTPUT_FORMAT_JSON],
+        default=OUTPUT_FORMAT_TEXT,
+        help="Output format: 'text' (default) or 'json' (newline-delimited JSON)",
     )
-    parser.add_argument(
-        "--packages-dir", default=None,
-        help="Path to packages/ directory for file existence checks"
-    )
-    parser.add_argument(
-        "--contracts", default=None,
-        help="Path to contracts.json (optional)"
-    )
-    parser.add_argument(
-        "--project-config", default=None,
-        help="Path to project.json (optional)"
-    )
-    parser.add_argument(
-        "--output", required=True,
-        help="Path to write validation result JSON"
-    )
-    args = parser.parse_args(argv)
+    return parser
 
+
+def _write_validation_output(output, path):
+    """Write validation result dict to a JSON file."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    with open(path, "w") as f:
+        json.dump(output, f, indent=2)
+        f.write("\n")
+
+
+def main(argv=None):
+    args = _build_arg_parser().parse_args(argv)
     plan = load_json(args.plan)
     contracts = load_json(args.contracts) if args.contracts else None
     project_config = load_json(args.project_config) if args.project_config else None
 
-    result, checks = validate(plan, args.packages_dir, contracts, project_config)
+    result, checks = validate(
+        plan, args.packages_dir, contracts, project_config,
+        output_format=args.output_format,
+    )
 
     output = {
         "stage": "validate_integration_plan",
@@ -331,11 +360,7 @@ def main(argv=None):
         "result": result,
         "checks": checks,
     }
-
-    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
-    with open(args.output, "w") as f:
-        json.dump(output, f, indent=2)
-        f.write("\n")
+    _write_validation_output(output, args.output)
 
     print(json.dumps({
         "stage": "validate_integration_plan",

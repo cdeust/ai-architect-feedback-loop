@@ -12,10 +12,17 @@ Covers:
   UT-VIR-007: Boundary — engines_affected=2, compound_score=0.3 (exactly at threshold)
   UT-VIR-008: REJECTED — inconsistent count vs list
   UT-VIR-009: REJECTED — recommendation coherence
+  UT-VIR-010: output_format='json' emits one JSON line per check
+  UT-VIR-011: output_format='text' (default) unchanged behavior
+  UT-VIR-012: invalid output_format raises ValueError
+  UT-VIR-013: ErrorRecord fields present and exact in JSON output
+  UT-VIR-014: ErrorRecord, format_error_record, emit_json_line importable
 
 Uses synthetic data — no external dependencies.
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
@@ -326,6 +333,133 @@ class TestSchemaChecks(unittest.TestCase):
         _, checks = vir.validate(report, None, ENGINE_GRAPH)
         schema_check = next(c for c in checks if c["check"] == "schema_completeness")
         self.assertEqual(schema_check["result"], "PASS")
+
+
+# ---------------------------------------------------------------------------
+# UT-VIR-010 through UT-VIR-014: output_format and ErrorRecord
+# ---------------------------------------------------------------------------
+
+class TestJsonOutputFormat(unittest.TestCase):
+    """UT-VIR-010: output_format='json' emits one JSON line per check."""
+
+    def test_json_format_emits_lines(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vir.validate(report, None, ENGINE_GRAPH, output_format="json")
+        lines = [l for l in stdout.getvalue().strip().split("\n") if l]
+        self.assertGreater(len(lines), 0)
+
+    def test_json_line_count_matches_checks(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result, checks = vir.validate(report, None, ENGINE_GRAPH, output_format="json")
+        lines = [l for l in stdout.getvalue().strip().split("\n") if l]
+        self.assertEqual(len(lines), len(checks))
+
+    def test_json_lines_are_valid_json(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vir.validate(report, None, ENGINE_GRAPH, output_format="json")
+        for line in stdout.getvalue().strip().split("\n"):
+            if line:
+                record = json.loads(line)
+                self.assertIsInstance(record, dict)
+
+
+class TestTextOutputFormat(unittest.TestCase):
+    """UT-VIR-011: output_format='text' (default) produces no extra stdout."""
+
+    def test_text_format_no_json_lines(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vir.validate(report, None, ENGINE_GRAPH, output_format="text")
+        self.assertEqual(stdout.getvalue(), "")
+
+    def test_default_is_text_format(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vir.validate(report, None, ENGINE_GRAPH)
+        self.assertEqual(stdout.getvalue(), "")
+
+
+class TestInvalidOutputFormat(unittest.TestCase):
+    """UT-VIR-012: invalid output_format raises ValueError."""
+
+    def test_invalid_format_raises(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        with self.assertRaises(ValueError) as ctx:
+            vir.validate(report, None, ENGINE_GRAPH, output_format="xml")
+        self.assertIn("xml", str(ctx.exception))
+
+    def test_empty_format_raises(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        with self.assertRaises(ValueError):
+            vir.validate(report, None, ENGINE_GRAPH, output_format="")
+
+
+class TestErrorRecordSchema(unittest.TestCase):
+    """UT-VIR-013: ErrorRecord fields present and exact in JSON output."""
+
+    def test_record_has_exact_keys(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vir.validate(report, None, ENGINE_GRAPH, output_format="json")
+        for line in stdout.getvalue().strip().split("\n"):
+            if line:
+                record = json.loads(line)
+                self.assertEqual(set(record.keys()), {"code", "message", "context"})
+
+    def test_code_is_check_name(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            result, checks = vir.validate(report, None, ENGINE_GRAPH, output_format="json")
+        lines = [l for l in stdout.getvalue().strip().split("\n") if l]
+        codes = [json.loads(l)["code"] for l in lines]
+        check_names = [c["check"] for c in checks]
+        self.assertEqual(codes, check_names)
+
+    def test_context_has_result_field(self):
+        report = make_report_with_score(3, 2, 0.3, 0.2)
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            vir.validate(report, None, ENGINE_GRAPH, output_format="json")
+        for line in stdout.getvalue().strip().split("\n"):
+            if line:
+                record = json.loads(line)
+                self.assertIn("result", record["context"])
+
+
+class TestErrorRecordImport(unittest.TestCase):
+    """UT-VIR-014: ErrorRecord, format_error_record, emit_json_line importable."""
+
+    def test_error_record_importable(self):
+        self.assertTrue(hasattr(vir, "ErrorRecord"))
+
+    def test_format_error_record_importable(self):
+        self.assertTrue(hasattr(vir, "format_error_record"))
+
+    def test_emit_json_line_importable(self):
+        self.assertTrue(hasattr(vir, "emit_json_line"))
+
+    def test_format_error_record_creates_valid_record(self):
+        record = vir.format_error_record("test_code", "test msg", {"result": "PASS"})
+        self.assertEqual(record["code"], "test_code")
+        self.assertEqual(record["message"], "test msg")
+        self.assertEqual(record["context"], {"result": "PASS"})
+
+    def test_emit_json_line_produces_compact_json(self):
+        record = vir.format_error_record("c", "m", {"result": "PASS"})
+        line = vir.emit_json_line(record)
+        parsed = json.loads(line)
+        self.assertEqual(parsed, record)
+        self.assertNotIn("\n", line)
 
 
 if __name__ == "__main__":
