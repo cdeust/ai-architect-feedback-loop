@@ -402,8 +402,10 @@ clean: ## Remove pipeline run artifacts and logs
 DOCKER_IMAGE := ai-architect-pipeline
 DOCKER_TAG   := latest
 
-# Auto-extract full Claude Code credentials JSON from macOS Keychain
-CLAUDE_CODE_OAUTH_TOKEN ?= $(shell security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
+# Auto-extract Claude Code OAuth access token from macOS Keychain.
+# Passes just the accessToken string (not full JSON) — required by Claude CLI in Docker.
+# If the token is stale, run `claude /login` first to refresh it.
+CLAUDE_CODE_OAUTH_TOKEN ?= $(shell security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" 2>/dev/null)
 GH_TOKEN ?= $(shell gh auth token 2>/dev/null)
 
 .PHONY: docker-build
@@ -418,6 +420,7 @@ docker-run: ## Run full pipeline in Docker (set TARGET_REPO)
 		-v $$(pwd)/runs:/app/runs \
 		-v $$(pwd)/logs:/app/logs \
 		-v $$HOME/.claude:/home/pipeline/.claude-host:ro \
+		-v $$HOME/.claude.json:/home/pipeline/.claude-host-json/.claude.json:ro \
 		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
 		-e CLAUDE_CODE_OAUTH_TOKEN=$${CLAUDE_CODE_OAUTH_TOKEN:-} \
 		-e GH_TOKEN=$${GH_TOKEN:-} \
@@ -447,6 +450,7 @@ docker-shell: ## Open a shell inside the Docker container
 		-v $$(pwd)/runs:/app/runs \
 		-v $$(pwd)/logs:/app/logs \
 		-v $$HOME/.claude:/home/pipeline/.claude-host:ro \
+		-v $$HOME/.claude.json:/home/pipeline/.claude-host-json/.claude.json:ro \
 		-v $$HOME/.aiprd:/home/pipeline/.aiprd:ro \
 		-e CLAUDE_CODE_OAUTH_TOKEN=$${CLAUDE_CODE_OAUTH_TOKEN:-} \
 		-e GH_TOKEN=$${GH_TOKEN:-} \

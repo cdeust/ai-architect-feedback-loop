@@ -37,6 +37,7 @@ CONFIG_DIR="$REPO_DIR/config"
 # Defaults
 BUILDER_DIR="${BUILDER_DIR:-${PIPELINE_BUILDER:?Set BUILDER_DIR or PIPELINE_BUILDER to the target product repo}}"
 TV_DIR="${TV_DIR:-$HOME/Downloads/TechnicalVeil}"
+TV_INPUT=""
 DRY_RUN=false
 
 # ---------------------------------------------------------------------------
@@ -56,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --builder-dir) BUILDER_DIR="$2"; shift 2;;
         --tv-dir) TV_DIR="$2"; shift 2;;
+        --tv-input) TV_INPUT="$2"; shift 2;;
         --dry-run) DRY_RUN=true; shift;;
         *) log "WARN" "Unknown argument: $1"; shift;;
     esac
@@ -192,12 +194,17 @@ run_stage "health_check" \
 
 # ─── PHASE 2: Discovery ───────────────────────────────────────────────────
 
+STAGE1_ARGS=(
+    --builder-dir "$BUILDER_DIR"
+    --config "$CONFIG_DIR/thresholds.json"
+    --tv-dir "$TV_DIR"
+    --output "$RUN_DIR"
+)
+[[ -n "$TV_INPUT" ]] && STAGE1_ARGS+=(--tv-input "$TV_INPUT")
+
 run_stage "stage1_parse_findings" \
     "$SCRIPTS_DIR/stage1-parse-findings.sh" \
-        --builder-dir "$BUILDER_DIR" \
-        --config "$CONFIG_DIR/thresholds.json" \
-        --tv-dir "$TV_DIR" \
-        --output "$RUN_DIR"
+        "${STAGE1_ARGS[@]}"
 
 FINDINGS_COUNT=$(python3 -c "import json; print(json.load(open('$RUN_DIR/findings.json'))['stats']['filtered_findings'])" 2>/dev/null || echo "0")
 

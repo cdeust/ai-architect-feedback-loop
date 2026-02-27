@@ -56,15 +56,43 @@ if [[ -d "$CLAUDE_MOUNT" ]]; then
     [[ -f "$CLAUDE_MOUNT/plugins/blocklist.json" ]] && cp "$CLAUDE_MOUNT/plugins/blocklist.json" "$CLAUDE_HOME/plugins/"
 fi
 
-# If CLAUDE_CODE_OAUTH_TOKEN is set, write credentials file for Claude CLI
+# Copy ~/.claude.json (account config) — required for Claude CLI to recognize the session.
+# Without it, Claude CLI treats the session as a fresh install and prompts for login.
+CLAUDE_JSON_MOUNT="/home/pipeline/.claude-host-json/.claude.json"
+CLAUDE_JSON_HOME="/home/pipeline/.claude.json"
+if [[ -f "$CLAUDE_JSON_MOUNT" && ! -f "$CLAUDE_JSON_HOME" ]]; then
+    log "Copying .claude.json from host mount..."
+    cp "$CLAUDE_JSON_MOUNT" "$CLAUDE_JSON_HOME"
+    chmod 600 "$CLAUDE_JSON_HOME"
+fi
+
+# Write credentials for Claude CLI from CLAUDE_CODE_OAUTH_TOKEN.
+# Accepts either:
+#   - Full JSON: {"claudeAiOauth": {"accessToken": "...", "refreshToken": "...", ...}}
+#   - Plain token string: sk-ant-oat01-... (used by community Docker setups)
 if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" && ! -f "$CLAUDE_HOME/.credentials.json" ]]; then
     log "Writing OAuth credentials from CLAUDE_CODE_OAUTH_TOKEN..."
-    echo "$CLAUDE_CODE_OAUTH_TOKEN" > "$CLAUDE_HOME/.credentials.json"
+    if echo "$CLAUDE_CODE_OAUTH_TOKEN" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
+        # Full JSON credentials object — write as-is
+        echo "$CLAUDE_CODE_OAUTH_TOKEN" > "$CLAUDE_HOME/.credentials.json"
+    else
+        # Plain token string — wrap in expected format
+        python3 -c "
+import json, sys, time
+token = sys.argv[1]
+creds = {'claudeAiOauth': {
+    'accessToken': token, 'refreshToken': '',
+    'expiresAt': int(time.time() * 1000) + 28800000
+}}
+with open('$CLAUDE_HOME/.credentials.json', 'w') as f:
+    json.dump(creds, f)
+" "$CLAUDE_CODE_OAUTH_TOKEN"
+    fi
     chmod 600 "$CLAUDE_HOME/.credentials.json"
 fi
 
 # Verify Claude CLI has credentials
-if [[ ! -f "$CLAUDE_HOME/.credentials.json" && -z "${ANTHROPIC_API_KEY:-}" ]]; then
+if [[ ! -f "$CLAUDE_HOME/.credentials.json" && -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
     log "WARNING: No Claude credentials found. Set CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY,"
     log "WARNING: or mount credentials at /home/pipeline/.claude-host/.credentials.json"
 fi
@@ -146,7 +174,27 @@ if [[ -f "$CONFIG_DIR/pipeline.yml" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 5.5: Generate engine graph from source + overrides
+# Step 5.5: Ensure clone is on the base branch (config now available)
+# ---------------------------------------------------------------------------
+if [[ -f "$CONFIG_DIR/project.json" ]]; then
+    BASE_BRANCH=$(python3 -c "
+import json
+with open('$CONFIG_DIR/project.json') as f:
+    cfg = json.load(f)
+print(cfg.get('base_branch', 'main'))
+" 2>/dev/null || echo "main")
+
+    CURRENT_BRANCH=$(git -C "$BUILD_DIR" branch --show-current)
+    if [[ "$CURRENT_BRANCH" != "$BASE_BRANCH" ]]; then
+        log "Switching clone to base branch: $BASE_BRANCH"
+        git -C "$BUILD_DIR" checkout "$BASE_BRANCH" 2>/dev/null \
+            || git -C "$BUILD_DIR" checkout -b "$BASE_BRANCH" "origin/$BASE_BRANCH" 2>/dev/null \
+            || log "WARN: Could not switch to $BASE_BRANCH, staying on $CURRENT_BRANCH"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Step 5.6: Generate engine graph from source + overrides
 # ---------------------------------------------------------------------------
 if [[ -f "$CONFIG_DIR/engine_graph_overrides.json" && -f "$CONFIG_DIR/project.json" ]]; then
     log "Generating engine graph..."
@@ -184,8 +232,11 @@ shift || true
 case "$COMMAND" in
     run)
         log "Starting pipeline..."
+        PIPELINE_ARGS=(--builder-dir "$BUILD_DIR")
+        # Pass --tv-input if TV_INPUT env var is set (Docker findings file)
+        [[ -n "${TV_INPUT:-}" ]] && PIPELINE_ARGS+=(--tv-input "$TV_INPUT")
         exec "$PIPELINE_REPO/scripts/pipeline.sh" \
-            --builder-dir "$BUILD_DIR" "$@"
+            "${PIPELINE_ARGS[@]}" "$@"
         ;;
     setup)
         log "Running setup wizard..."
