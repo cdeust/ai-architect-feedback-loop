@@ -243,8 +243,17 @@ PR_URL=$(gh pr create \
     --title "$TITLE" \
     --body "$(cat "$PR_BODY_FILE")" \
     --label "$LABELS" 2>&1) || {
-    log "ERROR" "gh pr create failed: $PR_URL"
-    exit 1
+    # Retry without labels if label creation fails
+    log "WARN" "PR create with labels failed ($PR_URL) — retrying without labels"
+    PR_URL=$(gh pr create \
+        --repo "$REPO_URL" \
+        --base "$BASE_BRANCH" \
+        --head "$BRANCH" \
+        --title "$TITLE" \
+        --body "$(cat "$PR_BODY_FILE")" 2>&1) || {
+        log "ERROR" "gh pr create failed: $PR_URL"
+        exit 1
+    }
 }
 
 log "INFO" "PR created: $PR_URL"

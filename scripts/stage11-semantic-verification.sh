@@ -181,7 +181,8 @@ log "INFO" "Finding: $FINDING_ID, Branch: $BRANCH"
 # Generate git diff against main on the feature branch
 # ---------------------------------------------------------------------------
 
-GIT_DIFF=$(git -C "$BUILDER_DIR" diff "${BASE_BRANCH}..${BRANCH}" -- packages/ library/ 2>/dev/null || echo "")
+# Diff all files (not restricted to specific directories)
+GIT_DIFF=$(git -C "$BUILDER_DIR" diff "${BASE_BRANCH}..${BRANCH}" 2>/dev/null || echo "")
 
 if [[ -z "$GIT_DIFF" ]]; then
     log "WARN" "No diff found between $BASE_BRANCH and $BRANCH"

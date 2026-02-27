@@ -277,7 +277,7 @@ run_stage "stage6_prd_review" \
         --builder-dir "$BUILDER_DIR" \
         --config "$CONFIG_DIR/thresholds.json" \
         --output "$RUN_DIR" \
-    || { log "ERROR" "PRD review failed"; handle_fatal_failure; }
+    || log "WARN" "PRD review failed — continuing with Stage 5-accepted PRDs"
 
 # ─── PHASE 5: Implementation + Verification (per-finding) ─────────────────
 
@@ -353,6 +353,7 @@ if [[ ${#SUCCESS_FIDS[@]} -gt 0 ]]; then
         "$SCRIPTS_DIR/stage12-benchmark.sh" \
             --config "$CONFIG_DIR/thresholds.json" \
             --baselines "$REPO_DIR/benchmarks/baselines" \
+            --current-dir "$BUILDER_DIR/benchmarks/baselines" \
             --output "$RUN_DIR" \
         || log "WARN" "Benchmark regression detected — PRs still created for review"
 

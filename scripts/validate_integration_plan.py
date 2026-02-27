@@ -96,11 +96,15 @@ def check_all_engines_have_modifications(plan):
 
 
 def check_cross_engine_connections(plan):
-    """Rule 4: Must have at least 1 cross-engine touchpoint."""
+    """Rule 4: Must have at least 1 cross-engine touchpoint (multi-engine only)."""
+    affected = plan.get("affected_engines", [])
+    if len(affected) <= 1:
+        return {"check": "cross_engine_connections", "result": "PASS",
+                "reason": "Single-engine change — cross-engine touchpoints not required"}
     touchpoints = plan.get("cross_engine_touchpoints", [])
     if len(touchpoints) < 1:
         return {"check": "cross_engine_connections", "result": "FAIL",
-                "reason": "Zero cross-engine touchpoints — single-engine change"}
+                "reason": "Zero cross-engine touchpoints — multi-engine change requires connections"}
     return {"check": "cross_engine_connections", "result": "PASS"}
 
 
@@ -252,8 +256,10 @@ def check_test_file_location(plan, project_config=None):
             if in_correct_package:
                 break
         if not in_correct_package:
-            # Check if it's at least in some test directory
-            if not any(v in tf for v in test_dir_variants):
+            # Check if it's at least in some test directory or has test_ prefix
+            import os
+            basename = os.path.basename(tf)
+            if not any(v in tf for v in test_dir_variants) and not basename.startswith("test_"):
                 misplaced.append(tf)
 
     if misplaced:

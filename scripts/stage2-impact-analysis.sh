@@ -377,7 +377,7 @@ PYEOF
     CLAUDE_EXIT=0
 
     ai_invoke "$TMP_DIR/prompt_${PROCESSED}.md" "$RAW_OUTPUT" "stage2" "$FINDING_ID" \
-        --output-format json --max-turns 5 \
+        --output-format json --max-turns 15 \
         || CLAUDE_EXIT=$?
 
     if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
@@ -396,7 +396,7 @@ PYEOF
     REPORT_FILE=$(artifact_impact "$OUTPUT_DIR" "$FINDING_ID")
     EXTRACT_EXIT=0
     python3 - "$RAW_OUTPUT" "$REPORT_FILE" <<'PYEOF' || EXTRACT_EXIT=$?
-import json, sys
+import json, re, sys
 
 raw_file, report_file = sys.argv[1], sys.argv[2]
 
@@ -406,6 +406,13 @@ with open(raw_file, 'r') as f:
 # Try parsing the raw output as structured JSON first
 try:
     data = json.loads(raw)
+    # Check for Claude CLI error responses or missing result
+    if isinstance(data, dict) and data.get("is_error"):
+        print(f"ERROR: Claude returned error: {data.get('result', 'unknown')}", file=sys.stderr)
+        sys.exit(1)
+    if isinstance(data, dict) and data.get("subtype", "").startswith("error"):
+        print(f"ERROR: Claude CLI error: {data.get('subtype', 'unknown')} (turns={data.get('num_turns', '?')})", file=sys.stderr)
+        sys.exit(1)
     # If it's the Claude output format, extract the result text
     if isinstance(data, dict) and "result" in data:
         text = data["result"]
@@ -433,7 +440,24 @@ if start == -1 or end == -1:
     print("ERROR: No JSON object found in Claude output", file=sys.stderr)
     sys.exit(1)
 
-report = json.loads(text[start:end+1])
+candidate = text[start:end+1]
+try:
+    report = json.loads(candidate)
+except json.JSONDecodeError:
+    # Repair non-strict JSON: single quotes → double quotes, trailing commas
+    fixed = candidate
+    fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+    fixed = re.sub(r"(?<=[\[{,:])\s*'([^']*?)'\s*", r' "\1" ', fixed)
+    fixed = re.sub(r"{\s*'([^']*?)'\s*:", r'{ "\1" :', fixed)
+    try:
+        report = json.loads(fixed)
+    except json.JSONDecodeError:
+        import ast
+        try:
+            report = ast.literal_eval(candidate)
+        except (ValueError, SyntaxError):
+            print(f"ERROR: Failed to parse JSON from Claude output (first 200 chars): {candidate[:200]}", file=sys.stderr)
+            sys.exit(1)
 
 with open(report_file, 'w') as f:
     json.dump(report, f, indent=2)

@@ -151,7 +151,7 @@ CLAUDE_EXIT=0
 
 cd "$BUILDER_DIR"
 AI_TIMEOUT="$TIMEOUT" ai_invoke "$TMP_DIR/prompt.md" "$RAW_OUTPUT" "stage7" "$FINDING_ID" \
-    --model opus --max-turns 5 \
+    --model opus --max-turns 15 \
     || CLAUDE_EXIT=$?
 
 if [[ "$CLAUDE_EXIT" -ne 0 ]]; then

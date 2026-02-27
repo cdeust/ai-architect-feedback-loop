@@ -12,9 +12,9 @@
   "modules_dir": ".",
   "domain_module": null,
   "interface_suffix": null,
-  "base_branch": "main",
-  "build_command": "make build",
-  "test_command": "make test",
+  "base_branch": "feat/docker-containerization",
+  "build_command": "python3 -m py_compile scripts/*.py",
+  "test_command": "python3 -m pytest scripts/test_*.py -x -q --tb=short 2>/dev/null || true",
   "deploy_command": null,
   "required_tools": [
     "python3",

@@ -127,8 +127,8 @@ for tool in $REQUIRED_TOOLS; do
         command -v "$tool"
 done
 
-check_with_msg "ERROR" "gh authenticated" \
-    "gh not authenticated — run: gh auth login" \
+check_with_msg "WARN" "gh authenticated" \
+    "gh not authenticated — needed for Stage 14 (PR creation)" \
     gh auth status
 
 # ─── B. Product State (builder repo health) ──────────────────────────────

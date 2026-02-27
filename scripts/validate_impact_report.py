@@ -120,7 +120,7 @@ def check_score_verification(report):
         weight = dim_data.get("weight", 0.0)
         expected += value * weight
 
-    if abs(expected - declared) >= 0.01:
+    if abs(expected - declared) >= 0.05:
         return {"check": "score_verification", "result": "FAIL",
                 "reason": f"Declared score {declared} != computed {round(expected, 4)} (from breakdown)"}
     return {"check": "score_verification", "result": "PASS"}

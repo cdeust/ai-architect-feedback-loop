@@ -389,11 +389,13 @@ for (( attempt=1; attempt<=MAX_ATTEMPTS; attempt++ )); do
 
     # ─── Branch lifecycle ───────────────────────────────────
     if [[ "$attempt" -gt 1 ]]; then
-        # Clean up leftover branch from previous attempt
+        # Clean up leftover branch and dirty working tree from previous attempt
+        git -C "$BUILDER_DIR" checkout "$BASE_BRANCH" 2>/dev/null || true
+        git -C "$BUILDER_DIR" reset --hard HEAD 2>/dev/null || true
+        git -C "$BUILDER_DIR" clean -fd 2>/dev/null || true
         local_branch_exists=$(git -C "$BUILDER_DIR" branch --list "$BRANCH_NAME" 2>/dev/null | tr -d ' ')
         if [[ -n "$local_branch_exists" ]]; then
             log "INFO" "Deleting branch $BRANCH_NAME from previous attempt"
-            git -C "$BUILDER_DIR" checkout "$BASE_BRANCH" 2>/dev/null || true
             git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
         fi
     fi
@@ -544,7 +546,6 @@ for g in report.get('gates', []):
     if [[ "$S11_EXIT" -ne 0 ]]; then
         # Parse verification findings
         VERIFICATION_FAILURES=""
-        local _verif_file
         _verif_file=$(artifact_verification11 "$ATTEMPT_DIR" "$FINDING_ID")
         if [[ -f "$_verif_file" ]]; then
             VERIFICATION_FAILURES=$(python3 -c "

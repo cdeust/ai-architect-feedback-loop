@@ -143,15 +143,33 @@ if ! command -v claude &> /dev/null; then
     exit 1
 fi
 
-# Verify clean working tree
+# Verify clean working tree — auto-clean in Docker pipeline mode
 DIRTY=$(git -C "$BUILDER_DIR" status --porcelain 2>/dev/null || echo "ERROR")
 if [[ "$DIRTY" == "ERROR" ]]; then
     log "ERROR" "Cannot check git status in builder dir"
     exit 1
 fi
 if [[ -n "$DIRTY" ]]; then
-    log "ERROR" "Builder repo has uncommitted changes. Commit or stash first."
-    exit 1
+    if [[ "${PIPELINE_DOCKER:-}" == "1" ]]; then
+        log "WARN" "Builder repo has uncommitted changes — auto-cleaning (Docker mode)"
+        git -C "$BUILDER_DIR" reset --hard HEAD 2>/dev/null || true
+        git -C "$BUILDER_DIR" clean -fd 2>/dev/null || true
+        # Re-check after cleanup
+        DIRTY=$(git -C "$BUILDER_DIR" status --porcelain 2>/dev/null || echo "ERROR")
+        if [[ -n "$DIRTY" && "$DIRTY" != "ERROR" ]]; then
+            log "WARN" "Files still dirty after reset — force checking out all files"
+            git -C "$BUILDER_DIR" checkout HEAD -- . 2>/dev/null || true
+            DIRTY=$(git -C "$BUILDER_DIR" status --porcelain 2>/dev/null || echo "")
+        fi
+        if [[ -n "$DIRTY" && "$DIRTY" != "ERROR" ]]; then
+            log "ERROR" "Builder repo still has uncommitted changes after auto-clean: $DIRTY"
+            exit 1
+        fi
+        log "INFO" "Auto-clean successful — working tree is clean"
+    else
+        log "ERROR" "Builder repo has uncommitted changes. Commit or stash first."
+        exit 1
+    fi
 fi
 
 # Resolve paths to absolute (Stage 7 cd's to BUILDER_DIR)
@@ -613,6 +631,8 @@ PYEOF
         continue
     elif [[ "$CLAUDE_EXIT" -ne 0 ]]; then
         log "ERROR" "AI invocation failed for $FINDING_ID (exit=$CLAUDE_EXIT)"
+        git -C "$BUILDER_DIR" reset --hard HEAD 2>/dev/null || true
+        git -C "$BUILDER_DIR" clean -fd 2>/dev/null || true
         git -C "$BUILDER_DIR" checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
         git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
         FAILED_COUNT=$((FAILED_COUNT + 1))
@@ -620,11 +640,52 @@ PYEOF
         continue
     fi
 
+    # ── Diagnostic: check state after Claude finishes ──
+    POST_BRANCH=$(git -C "$BUILDER_DIR" branch --show-current 2>/dev/null || echo "DETACHED")
+    POST_DIRTY=$(git -C "$BUILDER_DIR" status --porcelain 2>/dev/null | head -10)
+    POST_LOG=$(git -C "$BUILDER_DIR" log --oneline -3 2>/dev/null || echo "no log")
+    BRANCH_EXISTS=$(git -C "$BUILDER_DIR" branch --list "$BRANCH_NAME" 2>/dev/null | tr -d ' ')
+    log "INFO" "Post-Claude state: branch=$POST_BRANCH, feature_exists=${BRANCH_EXISTS:+yes}, dirty_files=$(echo "$POST_DIRTY" | wc -l | tr -d ' ')"
+    log "INFO" "Post-Claude log: $POST_LOG"
+    [[ -n "$POST_DIRTY" ]] && log "INFO" "Post-Claude dirty: $POST_DIRTY"
+
+    # Ensure we're on the feature branch (Claude may have switched branches)
+    CURRENT_BRANCH=$(git -C "$BUILDER_DIR" branch --show-current 2>/dev/null || echo "")
+    if [[ "$CURRENT_BRANCH" != "$BRANCH_NAME" ]]; then
+        log "WARN" "Claude left repo on branch '$CURRENT_BRANCH' instead of '$BRANCH_NAME' — switching back"
+        # Stash any uncommitted changes, switch to feature branch, then pop
+        git -C "$BUILDER_DIR" stash 2>/dev/null || true
+        if git -C "$BUILDER_DIR" checkout "$BRANCH_NAME" 2>/dev/null; then
+            git -C "$BUILDER_DIR" stash pop 2>/dev/null || true
+        else
+            log "WARN" "Feature branch '$BRANCH_NAME' not found — cannot recover commits"
+            git -C "$BUILDER_DIR" stash pop 2>/dev/null || true
+        fi
+    fi
+
+    # Auto-commit if Claude left uncommitted changes
+    DIRTY_FILES=$(git -C "$BUILDER_DIR" status --porcelain 2>/dev/null || echo "")
+    if [[ -n "$DIRTY_FILES" ]]; then
+        log "INFO" "Auto-committing uncommitted changes for $FINDING_ID"
+        git -C "$BUILDER_DIR" add -A
+        # --no-verify: skip pre-commit hook (Stage 10 gates run separately)
+        if git -C "$BUILDER_DIR" commit --no-verify -m "pipeline: $FINDING_ID — auto-committed implementation changes"; then
+            log "INFO" "Auto-commit succeeded for $FINDING_ID"
+        else
+            log "WARN" "Auto-commit failed for $FINDING_ID"
+        fi
+    else
+        log "INFO" "No uncommitted changes after Claude — checking for existing commits"
+    fi
+
     # Post-implementation checks
     COMMIT_COUNT=$(git -C "$BUILDER_DIR" rev-list --count HEAD ^"${ORIGINAL_BRANCH}" 2>/dev/null || echo "0")
+    log "INFO" "Commit count on branch: $COMMIT_COUNT (HEAD vs $ORIGINAL_BRANCH)"
 
     if [[ "$COMMIT_COUNT" -eq 0 ]]; then
         log "WARN" "No commits produced for $FINDING_ID"
+        git -C "$BUILDER_DIR" reset --hard HEAD 2>/dev/null || true
+        git -C "$BUILDER_DIR" clean -fd 2>/dev/null || true
         git -C "$BUILDER_DIR" checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
         git -C "$BUILDER_DIR" branch -D "$BRANCH_NAME" 2>/dev/null || true
         REJECTED_COUNT=$((REJECTED_COUNT + 1))

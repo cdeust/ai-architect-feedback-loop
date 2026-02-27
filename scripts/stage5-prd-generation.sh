@@ -473,9 +473,46 @@ RETRY_EOF
             fi
         done
 
+        # Fallback: search common subdirectories if not found at root
+        if [[ "$PRD_FILES_FOUND" -eq 0 ]]; then
+            log "INFO" "PRD files not at root — searching subdirectories..."
+            for search_dir in "$BUILDER_DIR/docs" "$BUILDER_DIR/output" "$BUILDER_DIR/prd" "$BUILDER_DIR/prds"; do
+                if [[ -f "$search_dir/prd.md" ]]; then
+                    log "INFO" "Found PRD files in $search_dir"
+                    for prd_file in prd.md prd-verification.md prd-jira.md prd-tests.md; do
+                        if [[ -f "$search_dir/$prd_file" ]]; then
+                            cp "$search_dir/$prd_file" "$WORKSPACE/$prd_file"
+                            rm -f "$search_dir/$prd_file"
+                            PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
+                        fi
+                    done
+                    break
+                fi
+            done
+        fi
+
+        # Last resort: find prd.md anywhere in builder dir
+        if [[ "$PRD_FILES_FOUND" -eq 0 ]]; then
+            FOUND_PRD=$(find "$BUILDER_DIR" -maxdepth 3 -name "prd.md" -not -path "*/node_modules/*" -not -path "*/.git/*" 2>/dev/null | head -1)
+            if [[ -n "$FOUND_PRD" ]]; then
+                FOUND_DIR=$(dirname "$FOUND_PRD")
+                log "INFO" "Found PRD files via search in $FOUND_DIR"
+                for prd_file in prd.md prd-verification.md prd-jira.md prd-tests.md; do
+                    if [[ -f "$FOUND_DIR/$prd_file" ]]; then
+                        cp "$FOUND_DIR/$prd_file" "$WORKSPACE/$prd_file"
+                        rm -f "$FOUND_DIR/$prd_file"
+                        PRD_FILES_FOUND=$((PRD_FILES_FOUND + 1))
+                    fi
+                done
+            fi
+        fi
+
         if [[ "$PRD_FILES_FOUND" -eq 0 ]]; then
             log "WARN" "No PRD files generated for $FINDING_ID (attempt $PRD_ATTEMPT)"
-            FAILURE_CONTEXT="No PRD files were written to disk. You MUST use the Write tool to create all 4 files: prd.md, prd-verification.md, prd-jira.md, prd-tests.md in the current directory."
+            # Log what files Claude DID create for debugging
+            NEW_FILES=$(git -C "$BUILDER_DIR" status --porcelain 2>/dev/null | head -20)
+            [[ -n "$NEW_FILES" ]] && log "INFO" "Files changed by Claude: $NEW_FILES"
+            FAILURE_CONTEXT="No PRD files were written to disk. You MUST use the Write tool to create all 4 files (prd.md, prd-verification.md, prd-jira.md, prd-tests.md) in the CURRENT WORKING DIRECTORY (repo root). Do NOT create subdirectories."
             continue
         fi
 
@@ -514,13 +551,17 @@ import json, sys
 metrics = json.load(open(sys.argv[1]))
 config = json.load(open(sys.argv[2]))
 threshold = config.get("stage_5", {}).get("prd_quality_minimum", 0.85)
-score = (metrics.get("verification", {}) or {}).get("overall_score")
-if score is None:
-    print("NO_SCORE")
-elif score >= threshold:
+# Free tier: skip score check (detailed metrics not available)
+if metrics.get("tier") == "free":
     print("PASS")
 else:
-    print(f"FAIL:{score:.2f}")
+    score = (metrics.get("verification", {}) or {}).get("overall_score")
+    if score is None:
+        print("NO_SCORE")
+    elif score >= threshold:
+        print("PASS")
+    else:
+        print(f"FAIL:{score:.2f}")
 PYEOF
         )
 
@@ -572,11 +613,16 @@ for f in failures:
         ACCEPTED_COUNT=$((ACCEPTED_COUNT + 1))
         add_summary_result "$FINDING_ID" "ACCEPTED"
     else
-        REJECT_REASON=$(python3 -c "
+        REJECT_REASON="validation failed"
+        if [[ -n "${VALIDATION_FILE:-}" && -f "${VALIDATION_FILE:-}" ]]; then
+            REJECT_REASON=$(python3 -c "
 import json
 data = json.load(open('$VALIDATION_FILE'))
 failures = [c['reason'] for c in data.get('checks', []) if c.get('result') == 'FAIL']
 print('; '.join(failures[:3]))" 2>/dev/null || echo "validation failed")
+        elif [[ -z "${VALIDATION_FILE:-}" ]]; then
+            REJECT_REASON="No PRD files generated in any attempt"
+        fi
         log "INFO" "Finding $FINDING_ID: PRD REJECTED after $MAX_PRD_RETRIES attempts ($REJECT_REASON)"
         REJECTED_COUNT=$((REJECTED_COUNT + 1))
         add_summary_result "$FINDING_ID" "REJECTED" "$REJECT_REASON"

@@ -151,7 +151,7 @@ import json
 with open('$config_dir/pipeline_preferences.json') as f:
     cfg = json.load(f)
 models = cfg.get('pipeline',{}).get('claude_model',{})
-stage_map = {'stage2':'analysis','stage3':'analysis','stage5':'prd','stage6':'prd',
+stage_map = {'stage2':'analysis','stage3':'integration','stage5':'prd','stage6':'prd',
              'stage7':'implementation','stage11':'verification','stage12':'benchmark'}
 role = stage_map.get('$stage', 'default')
 print(models.get(role, models.get('default', '')))

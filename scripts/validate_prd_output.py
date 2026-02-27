@@ -136,6 +136,10 @@ def check_verification_score_exists(metrics):
     if metrics is None:
         return {"check": "verification_score_exists", "result": "FAIL",
                 "reason": "Metrics file not found or invalid"}
+    # Free tier skips detailed metrics — score not available
+    if metrics.get("tier") == "free":
+        return {"check": "verification_score_exists", "result": "PASS",
+                "reason": "Free tier — detailed metrics not available"}
     verification = metrics.get("verification")
     if verification is None:
         return {"check": "verification_score_exists", "result": "FAIL",
@@ -153,6 +157,10 @@ def check_quality_threshold(metrics, threshold):
     if metrics is None:
         return {"check": "quality_threshold", "result": "FAIL",
                 "reason": "Metrics not available"}
+    # Free tier skips quality threshold enforcement
+    if metrics.get("tier") == "free":
+        return {"check": "quality_threshold", "result": "PASS",
+                "reason": "Free tier — threshold not enforced"}
     verification = metrics.get("verification", {})
     score = verification.get("overall_score")
     if score is None:

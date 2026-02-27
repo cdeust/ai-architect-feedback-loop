@@ -376,7 +376,7 @@ PYEOF
     CLAUDE_EXIT=0
 
     ai_invoke "$TMP_DIR/prompt_${FINDING_ID}.md" "$RAW_OUTPUT" "stage3" "$FINDING_ID" \
-        --output-format json --max-turns 5 \
+        --output-format json --max-turns 15 \
         || CLAUDE_EXIT=$?
 
     if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
@@ -393,7 +393,7 @@ PYEOF
     PLAN_FILE=$(artifact_integration "$OUTPUT_DIR" "$FINDING_ID")
     EXTRACT_EXIT=0
     python3 - "$RAW_OUTPUT" "$PLAN_FILE" <<'PYEOF' || EXTRACT_EXIT=$?
-import json, sys
+import json, re, sys
 
 raw_file, plan_file = sys.argv[1], sys.argv[2]
 
@@ -403,6 +403,13 @@ with open(raw_file, 'r') as f:
 # Try parsing structured output
 try:
     data = json.loads(raw)
+    # Check for Claude CLI error responses or missing result
+    if isinstance(data, dict) and data.get("is_error"):
+        print(f"ERROR: Claude returned error: {data.get('result', 'unknown')}", file=sys.stderr)
+        sys.exit(1)
+    if isinstance(data, dict) and data.get("subtype", "").startswith("error"):
+        print(f"ERROR: Claude CLI error: {data.get('subtype', 'unknown')} (turns={data.get('num_turns', '?')})", file=sys.stderr)
+        sys.exit(1)
     if isinstance(data, dict) and "result" in data:
         text = data["result"]
     elif isinstance(data, list):
@@ -427,7 +434,29 @@ if start == -1 or end == -1:
     print("ERROR: No JSON object found in Claude output", file=sys.stderr)
     sys.exit(1)
 
-plan = json.loads(text[start:end+1])
+candidate = text[start:end+1]
+try:
+    plan = json.loads(candidate)
+except json.JSONDecodeError:
+    # Repair non-strict JSON: single quotes → double quotes, trailing commas
+    fixed = candidate
+    # Remove trailing commas before } or ]
+    fixed = re.sub(r',\s*([}\]])', r'\1', fixed)
+    # Replace single-quoted keys/values with double-quoted ones
+    # Match 'text' when preceded by { , : [ or whitespace-after-those
+    fixed = re.sub(r"(?<=[\[{,:])\s*'([^']*?)'\s*", r' "\1" ', fixed)
+    # Also handle keys at start of object: { 'key'
+    fixed = re.sub(r"{\s*'([^']*?)'\s*:", r'{ "\1" :', fixed)
+    try:
+        plan = json.loads(fixed)
+    except json.JSONDecodeError:
+        # Last resort: try ast.literal_eval for Python dict syntax
+        import ast
+        try:
+            plan = ast.literal_eval(candidate)
+        except (ValueError, SyntaxError):
+            print(f"ERROR: Failed to parse JSON from Claude output (first 200 chars): {candidate[:200]}", file=sys.stderr)
+            sys.exit(1)
 
 with open(plan_file, 'w') as f:
     json.dump(plan, f, indent=2)

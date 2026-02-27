@@ -237,7 +237,7 @@ CLAUDE_EXIT=0
 
 cd "$BUILDER_DIR"
 ai_invoke "$TMP_DIR/prompt.md" "$RAW_OUTPUT" "stage6" "$FINDING_ID" \
-    --max-turns 5 \
+    --max-turns 15 \
     || CLAUDE_EXIT=$?
 
 if [[ "$CLAUDE_EXIT" -eq 42 ]]; then
