@@ -271,14 +271,52 @@ echo "$INTEGRATION_PLAN" > "$TMP_DIR/integration_plan.txt"
 echo "$CROSS_ENGINE_TOUCHPOINTS" > "$TMP_DIR/touchpoints.txt"
 echo "$ANTI_PATTERNS" > "$TMP_DIR/anti_patterns.txt"
 
+# Read architecture description (was never substituted — bug)
+ARCH_DESC=""
+ARCH_MD="$SCRIPT_DIR/../config/architecture.md"
+[[ -f "$ARCH_MD" ]] && ARCH_DESC=$(cat "$ARCH_MD")
+echo "$ARCH_DESC" > "$TMP_DIR/architecture.txt"
+
+# Read engine graph content (CLI arg exists but was never read — bug)
+ENGINE_GRAPH_CONTENT=$(cat "$ENGINE_GRAPH" 2>/dev/null || echo "{}")
+echo "$ENGINE_GRAPH_CONTENT" > "$TMP_DIR/engine_graph.txt"
+
+# Read CLAUDE.md rules from builder repo
+CLAUDE_MD_RULES=""
+[[ -f "$BUILDER_DIR/CLAUDE.md" ]] && CLAUDE_MD_RULES=$(head -c 3000 "$BUILDER_DIR/CLAUDE.md")
+echo "$CLAUDE_MD_RULES" > "$TMP_DIR/claude_md.txt"
+
+# Read manifest for advised_changes / not_advised_changes
+MANIFEST_PATH=$(artifact_manifest "$RUN_DIR" "$FINDING_ID")
+ADVISED_CHANGES=""
+NOT_ADVISED_CHANGES=""
+if [[ -f "$MANIFEST_PATH" ]]; then
+    ADVISED_CHANGES=$(python3 -c "import json; print('\n'.join(json.load(open('$MANIFEST_PATH')).get('advised_changes', [])))" 2>/dev/null || echo "")
+    NOT_ADVISED_CHANGES=$(python3 -c "import json; print('\n'.join(json.load(open('$MANIFEST_PATH')).get('not_advised_changes', [])))" 2>/dev/null || echo "")
+fi
+echo "$ADVISED_CHANGES" > "$TMP_DIR/advised_changes.txt"
+echo "$NOT_ADVISED_CHANGES" > "$TMP_DIR/not_advised_changes.txt"
+
+# Read implementation contract (shared with Stage 7)
+IMPL_CONTRACT=""
+_CONTRACT_PATH="$SCRIPT_DIR/../prompts/implementation_contract.md"
+[[ -f "$_CONTRACT_PATH" ]] && IMPL_CONTRACT=$(cat "$_CONTRACT_PATH")
+echo "$IMPL_CONTRACT" > "$TMP_DIR/impl_contract.txt"
+
 python3 - "$PROMPT_TEMPLATE" "$TMP_DIR/prd_content.txt" \
     "$TMP_DIR/git_diff.txt" "$TMP_DIR/integration_plan.txt" \
     "$TMP_DIR/touchpoints.txt" "$TMP_DIR/anti_patterns.txt" \
+    "$TMP_DIR/architecture.txt" "$TMP_DIR/engine_graph.txt" \
+    "$TMP_DIR/claude_md.txt" "$TMP_DIR/advised_changes.txt" \
+    "$TMP_DIR/not_advised_changes.txt" "$TMP_DIR/impl_contract.txt" \
     "$FINDING_ID" "$TMP_DIR/prompt.md" <<'PYEOF'
 import sys
 
 (template_path, prd_path, diff_path, plan_path,
- touchpoints_path, patterns_path, finding_id, output_path) = sys.argv[1:9]
+ touchpoints_path, patterns_path,
+ arch_path, engine_graph_path, claude_md_path,
+ advised_changes_path, not_advised_changes_path, contract_path,
+ finding_id, output_path) = sys.argv[1:15]
 
 with open(template_path) as f:
     template = f.read()
@@ -288,11 +326,17 @@ def read_file(p):
         return f.read()
 
 result = template
+result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", read_file(arch_path))
+result = result.replace("{{ENGINE_GRAPH}}", read_file(engine_graph_path))
 result = result.replace("{{UPGRADE_PRD}}", read_file(prd_path))
 result = result.replace("{{GIT_DIFF}}", read_file(diff_path))
 result = result.replace("{{INTEGRATION_PLAN}}", read_file(plan_path))
 result = result.replace("{{CROSS_ENGINE_TOUCHPOINTS}}", read_file(touchpoints_path))
 result = result.replace("{{ANTI_PATTERNS}}", read_file(patterns_path))
+result = result.replace("{{CLAUDE_MD_RULES}}", read_file(claude_md_path))
+result = result.replace("{{ADVISED_CHANGES}}", read_file(advised_changes_path))
+result = result.replace("{{NOT_ADVISED_CHANGES}}", read_file(not_advised_changes_path))
+result = result.replace("{{IMPLEMENTATION_CONTRACT}}", read_file(contract_path))
 result = result.replace("{{FINDING_ID}}", finding_id)
 
 with open(output_path, "w") as f:

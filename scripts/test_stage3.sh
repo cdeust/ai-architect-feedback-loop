@@ -237,12 +237,12 @@ test_creates_manifest() {
 
     if [[ -f "$tmpdir/output/manifest_tv-accepted.json" ]]; then
         # Check Gate 2 format
-        local has_must_change
-        has_must_change=$(python3 -c "import json; d=json.load(open('$tmpdir/output/manifest_tv-accepted.json')); print('yes' if 'must_change' in d and 'must_not_change' in d else 'no')")
-        if [[ "$has_must_change" == "yes" ]]; then
-            pass_test "Manifest has Gate 2 format (must_change + must_not_change)"
+        local has_advised
+        has_advised=$(python3 -c "import json; d=json.load(open('$tmpdir/output/manifest_tv-accepted.json')); print('yes' if 'advised_changes' in d and 'not_advised_changes' in d else 'no')")
+        if [[ "$has_advised" == "yes" ]]; then
+            pass_test "Manifest has Gate 2 format (advised_changes + not_advised_changes)"
         else
-            fail_test "Gate 2 format" "Missing must_change or must_not_change keys"
+            fail_test "Gate 2 format" "Missing advised_changes or not_advised_changes keys"
         fi
     else
         fail_test "manifest_tv-accepted.json" "File not found"

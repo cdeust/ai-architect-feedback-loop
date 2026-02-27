@@ -140,8 +140,8 @@ EOF
     # Manifest
     cat > "$tmpdir/run_dir/manifest_tv-retry.json" <<'EOF'
 {
-  "must_change": ["packages/AIPRDRAGEngine/Sources/Retrieval/ContextualBM25.swift"],
-  "must_not_change": [],
+  "advised_changes": ["packages/AIPRDRAGEngine/Sources/Retrieval/ContextualBM25.swift"],
+  "not_advised_changes": [],
   "allowed_new_files": []
 }
 EOF

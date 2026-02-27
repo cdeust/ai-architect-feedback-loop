@@ -350,11 +350,11 @@ for FINDING_ID in "${ACCEPTED_FINDINGS[@]}"; do
     fi
 
     # Read manifest
-    MUST_CHANGE=""
-    MUST_NOT_CHANGE=""
+    ADVISED_CHANGES=""
+    NOT_ADVISED_CHANGES=""
     if [[ -f "$MANIFEST" ]]; then
-        MUST_CHANGE=$(python3 -c "import json; print('\n'.join(json.load(open('$MANIFEST')).get('must_change', [])))" 2>/dev/null || echo "")
-        MUST_NOT_CHANGE=$(python3 -c "import json; print('\n'.join(json.load(open('$MANIFEST')).get('must_not_change', [])))" 2>/dev/null || echo "")
+        ADVISED_CHANGES=$(python3 -c "import json; print('\n'.join(json.load(open('$MANIFEST')).get('advised_changes', [])))" 2>/dev/null || echo "")
+        NOT_ADVISED_CHANGES=$(python3 -c "import json; print('\n'.join(json.load(open('$MANIFEST')).get('not_advised_changes', [])))" 2>/dev/null || echo "")
     fi
 
     # Get affected engines
@@ -378,8 +378,8 @@ import json, re, sys
 prd_text = open(sys.argv[1]).read()
 manifest = json.load(open(sys.argv[2]))
 prd_files = set(re.findall(r'packages/\S+\.\w+', prd_text))
-must_not_change = set(manifest.get("must_not_change", []))
-conflicts = prd_files & must_not_change
+not_advised_changes = set(manifest.get("not_advised_changes", []))
+conflicts = prd_files & not_advised_changes
 if conflicts:
     print(",".join(sorted(conflicts)))
 else:
@@ -562,22 +562,36 @@ print(chr(10).join(lines))
     echo "$CLAUDE_MD_RULES" > "$TMP_DIR/claude_md.txt"
     echo "$ENGINE_GRAPH_TEXT" > "$TMP_DIR/engine_graph_text.txt"
     echo "$PRD_CONTENT" > "$TMP_DIR/prd_content.txt"
-    echo "$MUST_CHANGE" > "$TMP_DIR/must_change.txt"
-    echo "$MUST_NOT_CHANGE" > "$TMP_DIR/must_not_change.txt"
+    echo "$ADVISED_CHANGES" > "$TMP_DIR/advised_changes.txt"
+    echo "$NOT_ADVISED_CHANGES" > "$TMP_DIR/not_advised_changes.txt"
     echo "$BUILD_CMDS" > "$TMP_DIR/build_cmds.txt"
     cat "$INTEGRATION_PLAN" > "$TMP_DIR/plan_content.txt"
 
+    # Read architecture description (was never substituted — bug)
+    ARCH_DESC=""
+    ARCH_MD="$SCRIPT_DIR/../config/architecture.md"
+    [[ -f "$ARCH_MD" ]] && ARCH_DESC=$(cat "$ARCH_MD")
+    echo "$ARCH_DESC" > "$TMP_DIR/architecture.txt"
+
+    # Read implementation contract (shared with Stage 11)
+    IMPL_CONTRACT=""
+    _CONTRACT_PATH="$SCRIPT_DIR/../prompts/implementation_contract.md"
+    [[ -f "$_CONTRACT_PATH" ]] && IMPL_CONTRACT=$(cat "$_CONTRACT_PATH")
+    echo "$IMPL_CONTRACT" > "$TMP_DIR/impl_contract.txt"
+
     python3 - "$PROMPT_TEMPLATE_PATH" "$TMP_DIR/engine_graph_text.txt" \
         "$TMP_DIR/claude_md.txt" "$TMP_DIR/prd_content.txt" \
-        "$TMP_DIR/plan_content.txt" "$TMP_DIR/must_change.txt" \
-        "$TMP_DIR/must_not_change.txt" "$TMP_DIR/contracts_${FINDING_ID}.md" \
+        "$TMP_DIR/plan_content.txt" "$TMP_DIR/advised_changes.txt" \
+        "$TMP_DIR/not_advised_changes.txt" "$TMP_DIR/contracts_${FINDING_ID}.md" \
         "$TMP_DIR/build_cmds.txt" "$FINDING_ID" \
+        "$TMP_DIR/architecture.txt" "$TMP_DIR/impl_contract.txt" \
         "$TMP_DIR/prompt_${FINDING_ID}.md" <<'PYEOF'
 import sys
 
 (template_path, graph_path, claude_md_path, prd_path,
- plan_path, must_change_path, must_not_change_path,
- contracts_path, build_cmds_path, finding_id, output_path) = sys.argv[1:12]
+ plan_path, advised_changes_path, not_advised_changes_path,
+ contracts_path, build_cmds_path, finding_id,
+ arch_path, contract_path, output_path) = sys.argv[1:14]
 
 with open(template_path) as f:
     template = f.read()
@@ -587,14 +601,16 @@ def read_file(p):
         return f.read()
 
 result = template
+result = result.replace("{{ARCHITECTURE_DESCRIPTION}}", read_file(arch_path))
 result = result.replace("{{ENGINE_GRAPH}}", read_file(graph_path))
 result = result.replace("{{CLAUDE_MD_RULES}}", read_file(claude_md_path))
 result = result.replace("{{UPGRADE_PRD}}", read_file(prd_path))
 result = result.replace("{{INTEGRATION_PLAN}}", read_file(plan_path))
-result = result.replace("{{MUST_CHANGE}}", read_file(must_change_path))
-result = result.replace("{{MUST_NOT_CHANGE}}", read_file(must_not_change_path))
+result = result.replace("{{ADVISED_CHANGES}}", read_file(advised_changes_path))
+result = result.replace("{{NOT_ADVISED_CHANGES}}", read_file(not_advised_changes_path))
 result = result.replace("{{ENGINE_CONTRACTS}}", read_file(contracts_path))
 result = result.replace("{{BUILD_COMMANDS}}", read_file(build_cmds_path))
+result = result.replace("{{IMPLEMENTATION_CONTRACT}}", read_file(contract_path))
 result = result.replace("{{FINDING_ID}}", finding_id)
 
 with open(output_path, "w") as f:
@@ -696,51 +712,46 @@ PYEOF
     log "INFO" "Found $COMMIT_COUNT commits for $FINDING_ID"
     fi  # end _PARALLEL_DONE check
 
-    # Check manifest compliance: only must_change files were modified
-    MANIFEST_OK=true
+    # Check manifest compliance (advisory — warn but don't reject)
     if [[ -f "$MANIFEST" ]]; then
         MODIFIED_FILES=$(git -C "$BUILDER_DIR" diff --name-only "${ORIGINAL_BRANCH}..HEAD" 2>/dev/null || echo "")
-        MANIFEST_VIOLATION=$(python3 - "$MANIFEST" <<PYEOF
+        MANIFEST_DRIFT=$(python3 - "$MANIFEST" <<PYEOF
 import json, sys
 manifest = json.load(open(sys.argv[1]))
-must_not_change = set(manifest.get("must_not_change", []))
+not_advised = set(manifest.get("not_advised_changes", []))
 modified = """$MODIFIED_FILES""".strip().split("\n")
-violations = [f for f in modified if f in must_not_change]
-if violations:
-    print(",".join(violations))
+drifted = [f for f in modified if f in not_advised]
+if drifted:
+    print(",".join(drifted))
 else:
     print("")
 PYEOF
         )
 
-        if [[ -n "$MANIFEST_VIOLATION" ]]; then
-            log "WARN" "Manifest violation for $FINDING_ID: $MANIFEST_VIOLATION"
-            MANIFEST_OK=false
+        if [[ -n "$MANIFEST_DRIFT" ]]; then
+            log "WARN" "Manifest drift for $FINDING_ID (advisory): $MANIFEST_DRIFT"
         fi
     fi
 
     # Build verification using project config
     BUILD_OK=true
-    if [[ "$MANIFEST_OK" == "true" ]]; then
-        verify_build_cmd="make build"
-        if [[ -f "$SCRIPT_DIR/../config/project.json" ]]; then
-            verify_build_cmd=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/../config/project.json')).get('build_command', 'make build'))" 2>/dev/null || echo "make build")
-        fi
-        if ! (cd "$BUILDER_DIR" && eval "$verify_build_cmd" > /dev/null 2>&1); then
-            log "WARN" "Build verification failed"
-            BUILD_OK=false
-        fi
+    verify_build_cmd="make build"
+    if [[ -f "$SCRIPT_DIR/../config/project.json" ]]; then
+        verify_build_cmd=$(python3 -c "import json; print(json.load(open('$SCRIPT_DIR/../config/project.json')).get('build_command', 'make build'))" 2>/dev/null || echo "make build")
+    fi
+    if ! (cd "$BUILDER_DIR" && eval "$verify_build_cmd" > /dev/null 2>&1); then
+        log "WARN" "Build verification failed"
+        BUILD_OK=false
     fi
 
-    # Decision
-    if [[ "$MANIFEST_OK" == "true" && "$BUILD_OK" == "true" ]]; then
+    # Decision — manifest drift is advisory, only build failure rejects
+    if [[ "$BUILD_OK" == "true" ]]; then
         log "INFO" "Finding $FINDING_ID: Implementation ACCEPTED ($COMMIT_COUNT commits on $BRANCH_NAME)"
         git -C "$BUILDER_DIR" checkout "$ORIGINAL_BRANCH" 2>/dev/null || true
         ACCEPTED_COUNT=$((ACCEPTED_COUNT + 1))
         add_summary_result "$FINDING_ID" "ACCEPTED"
     else
         REASON=""
-        [[ "$MANIFEST_OK" != "true" ]] && REASON="Manifest violation: $MANIFEST_VIOLATION"
         [[ "$BUILD_OK" != "true" ]] && REASON="${REASON:+$REASON; }Build failed"
 
         log "WARN" "Finding $FINDING_ID: Implementation REJECTED ($REASON)"

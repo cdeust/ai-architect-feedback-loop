@@ -116,7 +116,7 @@ setup_mock_claude_bad_commit() {
 
     mkdir -p "$mock_dir"
 
-    # This mock modifies a must_not_change file
+    # This mock modifies a not_advised_changes file
     cat > "$mock_dir/claude" <<MOCKEOF
 #!/usr/bin/env bash
 BUILDER="$builder_dir"
@@ -137,7 +137,7 @@ setup_test_fixtures() {
 
     setup_mock_builder_repo "$builder_dir"
 
-    # Also create a Makefile in builder (needed for must_not_change tests)
+    # Also create a Makefile in builder (needed for not_advised_changes tests)
     cat > "$builder_dir/Makefile" <<'EOF'
 .PHONY: help
 help:
@@ -195,8 +195,8 @@ EOF
     # Manifest
     cat > "$tmpdir/run_dir/manifest_tv-accepted.json" <<'EOF'
 {
-  "must_change": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
-  "must_not_change": ["Makefile", "library/Package.swift"],
+  "advised_changes": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
+  "not_advised_changes": ["Makefile", "library/Package.swift"],
   "allowed_new_files": []
 }
 EOF
@@ -387,7 +387,7 @@ test_prd_manifest_conflict() {
     tmpdir=$(mktemp -d)
     setup_test_fixtures "$tmpdir"
 
-    # PRD references a must_not_change file
+    # PRD references a not_advised_changes file
     cat > "$tmpdir/run_dir/prd_output_tv-accepted/prd.md" <<'EOF'
 # Feature PRD
 Modify packages/AIPRDEncryptionEngine/Package.swift for security.
@@ -396,8 +396,8 @@ EOF
     # Update manifest to protect that file
     cat > "$tmpdir/run_dir/manifest_tv-accepted.json" <<'EOF'
 {
-  "must_change": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
-  "must_not_change": ["packages/AIPRDEncryptionEngine/Package.swift", "Makefile"],
+  "advised_changes": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
+  "not_advised_changes": ["packages/AIPRDEncryptionEngine/Package.swift", "Makefile"],
   "allowed_new_files": []
 }
 EOF

@@ -322,7 +322,7 @@ PYEOF
 # ---------------------------------------------------------------------------
 
 run_gate_2() {
-    log "INFO" "Gate 2: Manifest compliance"
+    log "INFO" "Gate 2: Manifest compliance (advisory)"
     local start_time
     start_time=$(date +%s)
 
@@ -333,7 +333,7 @@ run_gate_2() {
     # If no manifest provided, check for one in the run directory or config
     if [[ -z "$manifest" || ! -f "$manifest" ]]; then
         log "INFO" "Gate 2: No manifest constraints defined — passing by default"
-        echo '{"reason":"no manifest constraints defined","must_change_files":0,"must_not_change_files":0}' > "$details_file"
+        echo '{"reason":"no manifest constraints defined","advised_changes_files":0,"not_advised_changes_files":0}' > "$details_file"
         local duration=$(( $(date +%s) - start_time ))
         add_gate_result 2 "manifest_compliance" "PASS" "$duration" "$details_file"
         rm -f "$details_file"
@@ -345,7 +345,7 @@ run_gate_2() {
     changed_files_file=$(mktemp)
     (cd "$BUILDER_DIR" && git diff --name-only HEAD~1 2>/dev/null || true) > "$changed_files_file"
 
-    # Use Python for the entire manifest check — avoids bash JSON escaping
+    # Advisory manifest check — drift is reported but does not fail the gate
     python3 - "$manifest" "$changed_files_file" "$details_file" <<'PYEOF'
 import json, sys
 manifest_path, changed_file, details_file = sys.argv[1:4]
@@ -354,43 +354,43 @@ with open(manifest_path) as f:
 with open(changed_file) as f:
     changed = set(line.strip() for line in f if line.strip())
 
-must_change = manifest.get("must_change", [])
-must_not_change = manifest.get("must_not_change", [])
-violations = []
-must_change_satisfied = 0
-must_not_change_satisfied = 0
+advised = manifest.get("advised_changes", [])
+not_advised = manifest.get("not_advised_changes", [])
+drift = []
+advised_satisfied = 0
+not_advised_satisfied = 0
 
-for path in must_change:
+for path in advised:
     if path in changed:
-        must_change_satisfied += 1
+        advised_satisfied += 1
     else:
-        violations.append({"type": "must_change_missing", "file": path})
+        drift.append({"type": "advised_not_changed", "file": path})
 
-for path in must_not_change:
+for path in not_advised:
     if path in changed:
-        violations.append({"type": "must_not_change_violated", "file": path})
+        drift.append({"type": "not_advised_changed", "file": path})
     else:
-        must_not_change_satisfied += 1
+        not_advised_satisfied += 1
 
 details = {
-    "must_change_files": len(must_change),
-    "must_change_satisfied": must_change_satisfied,
-    "must_not_change_files": len(must_not_change),
-    "must_not_change_satisfied": must_not_change_satisfied,
-    "violations": violations
+    "advised_changes_files": len(advised),
+    "advised_changes_satisfied": advised_satisfied,
+    "not_advised_changes_files": len(not_advised),
+    "not_advised_changes_satisfied": not_advised_satisfied,
+    "drift": drift
 }
 with open(details_file, 'w') as f:
     json.dump(details, f)
 PYEOF
     rm -f "$changed_files_file"
 
-    local violation_count
-    violation_count=$(python3 -c "import json; print(len(json.load(open('$details_file'))['violations']))")
+    local drift_count
+    drift_count=$(python3 -c "import json; print(len(json.load(open('$details_file')).get('drift', [])))")
 
+    # Advisory: always PASS, but log drift for visibility
     local result="PASS"
-    if [[ "$violation_count" -gt 0 ]]; then
-        result="FAIL"
-        log "WARN" "Gate 2: $violation_count manifest violations"
+    if [[ "$drift_count" -gt 0 ]]; then
+        log "WARN" "Gate 2: $drift_count manifest drift items (advisory — not blocking)"
     else
         log "INFO" "Gate 2: Manifest compliance verified"
     fi

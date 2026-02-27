@@ -30,6 +30,13 @@ You are reviewing changes to the target product.
 Each touchpoint must have corresponding code changes on BOTH sides:
 {{CROSS_ENGINE_TOUCHPOINTS}}
 
+### Architecture Rules (from project CLAUDE.md, if available)
+{{CLAUDE_MD_RULES}}
+
+### Manifest Constraints (advisory)
+Files that should have been changed: {{ADVISED_CHANGES}}
+Files that should not have been changed: {{NOT_ADVISED_CHANGES}}
+
 ## Verification Checklist (ADVERSARIAL — find problems)
 
 ### 1. PRD-to-Code Alignment
@@ -54,24 +61,10 @@ Check for these PROHIBITED patterns (from prohibited_patterns.txt):
 - No new concrete types leaked across module boundaries?
 - Dependency graph respected (no unauthorized cross-module imports)?
 
-### 5. Test Coverage
-- New/changed public methods have corresponding test cases?
-- Tests in correct module directory?
-- No placeholder test bodies (SKILL.md Rule 7)?
-- Test IDs use UT-/IT-/E2E- prefixes?
-
-### 6. Solution Genericity & Scalability
-Flag as WARNING if any of these apply:
-- Caller-specific constants hardcoded in shared/library code (should be parameters)
-- Single-purpose parameters that only solve one caller's need when a general mechanism
-  would serve multiple callers at equivalent cost
-- Naming that references a specific bug/finding instead of the general capability
-- Code duplication that could be a reusable utility
-- Solution that would require re-opening the shared component if a second caller
-  has a similar but slightly different need
-
-Ask: "If three more teams hit a similar problem, would this implementation handle
-their cases without further changes to the shared code?" If not, flag it.
+### 5. Implementation Quality Contract Compliance
+Verify the diff complies with ALL rules in the contract below.
+Flag CRITICAL for clear violations, WARNING for borderline cases:
+{{IMPLEMENTATION_CONTRACT}}
 
 ## Output Format
 You MUST output a single JSON object (no markdown, no explanation before it).
@@ -100,5 +93,5 @@ Write it as the LAST line of your response, parseable by the orchestrator:
 }
 ```
 
-CRITICAL or WARNING findings → overall_result = FAIL.
-Only INFO findings → overall_result = PASS.
+Any CRITICAL finding → overall_result = FAIL.
+WARNING + INFO findings only → overall_result = PASS (warnings are advisory, included in report).

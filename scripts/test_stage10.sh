@@ -289,15 +289,15 @@ public struct Untouchable {}
 SWIFT
 (cd "$BUILDER_008" && git add -A && git commit -q -m "initial")
 
-# Modify the untouchable file (violates must_not_change)
+# Modify the untouchable file (violates not_advised_changes)
 echo "// modified" >> "$BUILDER_008/library/Sources/Untouchable.swift"
 (cd "$BUILDER_008" && git add -A && git commit -q -m "second")
 
-# Create manifest: must_change a file that didn't change, must_not_change one that did
+# Create manifest: advised_changes a file that didn't change, not_advised_changes one that did
 cat > "$MANIFEST_008" <<'JSON'
 {
-    "must_change": ["packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Original.swift"],
-    "must_not_change": ["library/Sources/Untouchable.swift"]
+    "advised_changes": ["packages/AIPRDSharedUtilities/Sources/AIPRDSharedUtilities/Original.swift"],
+    "not_advised_changes": ["library/Sources/Untouchable.swift"]
 }
 JSON
 

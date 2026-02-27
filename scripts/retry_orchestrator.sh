@@ -253,7 +253,7 @@ for a in attempts:
     elif "alignment" in reason.lower() or "FR-" in reason:
         lines.append("- **Action Required:** Implement the missing functionality as specified in the PRD.")
     elif "manifest" in reason.lower():
-        lines.append("- **Action Required:** Do not modify protected files. Only change files listed in must_change.")
+        lines.append("- **Action Required:** Prefer changing files in the advised list. Avoid changing files in the not-advised list unless necessary.")
     elif "orphan" in reason.lower():
         lines.append("- **Action Required:** Ensure all new types are referenced by existing code.")
 
@@ -557,8 +557,12 @@ for f in findings:
     sev = f.get('severity', '?')
     desc = f.get('description', '?')
     cat = f.get('category', '?')
+    evidence = f.get('evidence', '')
     if sev in ('CRITICAL', 'WARNING'):
-        lines.append(f'{sev} ({cat}): {desc[:100]}')
+        entry = f'{sev} ({cat}): {desc[:300]}'
+        if evidence:
+            entry += f' [evidence: {evidence[:200]}]'
+        lines.append(entry)
 print('; '.join(lines) if lines else 'Semantic verification failed')
 " 2>/dev/null || echo "Semantic verification failed")
         fi

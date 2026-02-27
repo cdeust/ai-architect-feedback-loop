@@ -33,12 +33,12 @@ files listed below.
 ## Affected Module Contracts (Current Interfaces)
 {{ENGINE_CONTRACTS}}
 
-## Manifest Constraints
-### Files you MUST modify:
-{{MUST_CHANGE}}
+## Manifest Constraints (advisory)
+### Files you should modify:
+{{ADVISED_CHANGES}}
 
-### Files you MUST NOT modify:
-{{MUST_NOT_CHANGE}}
+### Files you should avoid modifying:
+{{NOT_ADVISED_CHANGES}}
 
 ## Implementation Rules
 1. Modify ONLY the files listed in your work unit

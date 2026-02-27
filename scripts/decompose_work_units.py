@@ -74,12 +74,12 @@ def decompose(integration_plan, prd_text, manifest=None):
     cross_engine = integration_plan.get("cross_engine_touchpoints", [])
     finding_id = integration_plan.get("finding_id", "unknown")
 
-    # Build must_change / must_not_change sets per engine
-    must_change_set = set()
-    must_not_change_set = set()
+    # Build advised_changes / not_advised_changes sets per engine
+    advised_changes_set = set()
+    not_advised_changes_set = set()
     if manifest:
-        must_change_set = set(manifest.get("must_change", []))
-        must_not_change_set = set(manifest.get("must_not_change", []))
+        advised_changes_set = set(manifest.get("advised_changes", []))
+        not_advised_changes_set = set(manifest.get("not_advised_changes", []))
 
     work_units = []
     for i, mod in enumerate(modifications):
@@ -94,8 +94,8 @@ def decompose(integration_plan, prd_text, manifest=None):
         }
 
         # Filter manifest constraints to this engine's files
-        wu_must_change = [f for f in files if f in must_change_set]
-        wu_must_not_change = sorted(must_not_change_set)
+        wu_advised_changes = [f for f in files if f in advised_changes_set]
+        wu_not_advised_changes = sorted(not_advised_changes_set)
 
         # Find cross-engine touchpoints involving this engine
         wu_touchpoints = []
@@ -114,8 +114,8 @@ def decompose(integration_plan, prd_text, manifest=None):
             "file_actions": file_actions,
             "contracts": extract_engine_contracts(mod),
             "touchpoints": wu_touchpoints,
-            "must_change": wu_must_change,
-            "must_not_change": wu_must_not_change,
+            "advised_changes": wu_advised_changes,
+            "not_advised_changes": wu_not_advised_changes,
             "prd_slice": prd_slice,
         }
         work_units.append(work_unit)

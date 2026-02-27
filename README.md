@@ -42,7 +42,7 @@ TARGET_REPO=/path/to/your-product make docker-run            # run pipeline
 
 The container creates a **local clone** of your repo (original is mounted read-only), installs pre-commit hooks for quality gates, and runs Claude Code with `--dangerously-skip-permissions` (safe inside the container).
 
-Requires: Docker, `CLAUDE_CODE_OAUTH_TOKEN` (run `claude setup-token`), `GH_TOKEN` (GitHub auth), `~/.aiprd/license-key`.
+Requires: Docker, `CLAUDE_CODE_OAUTH_TOKEN` (extracted from Keychain — see [docs/docker.md](docs/docker.md)), `GH_TOKEN` (GitHub auth), `~/.aiprd/license-key`.
 
 ## What you get
 
@@ -65,10 +65,10 @@ Each PR includes: impact analysis, integration plan, PRD excerpt, quality enforc
 |---|---|---|
 | Discovery | 1 | Parse findings, filter by relevance, prioritize by multi-module impact |
 | Analysis | 2-6 | Impact scoring, integration design, PRD generation + review ([64 quality rules](docs/quality-rules.md) enforced) |
-| Implementation | 7-11 | Feature branch, code changes, build + test, quality gates, semantic verification |
+| Implementation | 7-11 | Feature branch, code changes, build + test, quality gates, semantic verification (shared contract) |
 | Delivery | 12-14 | Benchmark, deployment simulation, PR creation per finding |
 
-Each finding retries up to 3 times. Failed findings are skipped so the pipeline keeps moving.
+Each finding retries up to 3 times. Manifest constraints (`advised_changes` / `not_advised_changes`) are advisory — implementation can drift when edge cases require it, without blocking the pipeline. Failed findings are skipped so the pipeline keeps moving.
 
 Full stage details: [docs/configuration.md](docs/configuration.md#pipeline-stages)
 

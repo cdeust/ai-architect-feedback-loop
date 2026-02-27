@@ -7,7 +7,7 @@ Covers:
   UT-CPI-002: Port resolution — category retrieval → related ports
   UT-CPI-003: Service resolution — category retrieval → key services
   UT-CPI-004: Dependency subgraph — RAGEngine → feeds: OrchestrationEngine
-  UT-CPI-005: Manifest constraints — must_change / must_not_change in output
+  UT-CPI-005: Manifest constraints — advised_changes / not_advised_changes in output
   UT-CPI-006: Contract embedding — contracts markdown in output
   UT-CPI-007: Missing impact report → sys.exit(1)
   UT-CPI-008: Missing manifest → graceful degradation
@@ -128,11 +128,11 @@ def make_integration_plan(**overrides):
 
 def make_manifest(**overrides):
     base = {
-        "must_change": [
+        "advised_changes": [
             "packages/AIPRDRAGEngine/Sources/Retrieval/ContextualBM25.swift",
             "packages/AIPRDSharedUtilities/Sources/Domain/Ports/RetrievalPort.swift",
         ],
-        "must_not_change": [
+        "not_advised_changes": [
             "packages/AIPRDEncryptionEngine/Package.swift",
             "library/Package.swift",
         ],
@@ -183,7 +183,7 @@ class TestCompose(unittest.TestCase):
         self.assertIn("feeds: OrchestrationEngine", md)
 
     def test_manifest_constraints(self):
-        """UT-CPI-005: must_change / must_not_change in output."""
+        """UT-CPI-005: advised_changes / not_advised_changes in output."""
         manifest = make_manifest()
         md = cpi.compose(
             make_impact_report(), make_integration_plan(), manifest,

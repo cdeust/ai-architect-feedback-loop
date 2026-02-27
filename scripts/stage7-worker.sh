@@ -174,8 +174,8 @@ for tp in wu.get("touchpoints", []):
     tp_lines.append(f"- {fr} -> {to} via {via}: {desc}")
 touchpoints = "\n".join(tp_lines) or "(no cross-engine touchpoints for this module)"
 
-must_change = "\n".join(f"- {f}" for f in wu.get("must_change", [])) or "(none specified)"
-must_not_change = "\n".join(f"- {f}" for f in wu.get("must_not_change", [])) or "(none)"
+advised_changes = "\n".join(f"- {f}" for f in wu.get("advised_changes", [])) or "(none specified)"
+not_advised_changes = "\n".join(f"- {f}" for f in wu.get("not_advised_changes", [])) or "(none)"
 prd_slice = wu.get("prd_slice", "(no PRD slice available)")
 
 result = template
@@ -185,8 +185,8 @@ result = result.replace("{{PRD_SLICE}}", prd_slice)
 result = result.replace("{{FILE_ACTIONS}}", file_actions)
 result = result.replace("{{CONTRACT_CHANGES}}", contracts)
 result = result.replace("{{TOUCHPOINTS}}", touchpoints)
-result = result.replace("{{MUST_CHANGE}}", must_change)
-result = result.replace("{{MUST_NOT_CHANGE}}", must_not_change)
+result = result.replace("{{ADVISED_CHANGES}}", advised_changes)
+result = result.replace("{{NOT_ADVISED_CHANGES}}", not_advised_changes)
 
 # Placeholders that stage7 orchestrator fills (or left empty for worker)
 for placeholder in ("{{ARCHITECTURE_DESCRIPTION}}", "{{ENGINE_GRAPH}}",

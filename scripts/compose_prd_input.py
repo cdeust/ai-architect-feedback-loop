@@ -139,11 +139,11 @@ def compose(impact_report, integration_plan, manifest, contracts_md,
     subgraph = build_engine_subgraph(affected_engines, engine_graph)
 
     # Manifest constraints
-    must_change = []
-    must_not_change = []
+    advised_changes = []
+    not_advised_changes = []
     if manifest:
-        must_change = manifest.get("must_change", [])
-        must_not_change = manifest.get("must_not_change", [])
+        advised_changes = manifest.get("advised_changes", [])
+        not_advised_changes = manifest.get("not_advised_changes", [])
 
     # Cross-engine touchpoints from integration plan
     touchpoints = []
@@ -198,15 +198,15 @@ def compose(impact_report, integration_plan, manifest, contracts_md,
 
     # Integration Constraints
     sections.append("## Integration Constraints")
-    sections.append("### Files to Modify (must_change from manifest)")
-    if must_change:
-        for f in must_change:
+    sections.append("### Files to Modify (advised_changes from manifest)")
+    if advised_changes:
+        for f in advised_changes:
             sections.append(f"- {f}")
     else:
         sections.append("- No manifest constraints available")
-    sections.append("### Files NOT to Modify (must_not_change from manifest)")
-    if must_not_change:
-        for f in must_not_change:
+    sections.append("### Files NOT to Modify (not_advised_changes from manifest)")
+    if not_advised_changes:
+        for f in not_advised_changes:
             sections.append(f"- {f}")
     else:
         sections.append("- No manifest constraints available")

@@ -3,10 +3,10 @@
 Unit tests for generate_manifest.py (PIPE-E2-005)
 
 Covers:
-  UT-GM-001: Correct must_change — matches plan's modify-action files
-  UT-GM-002: Correct must_not_change — Package.swift for unaffected engines + library + Makefile
+  UT-GM-001: Correct advised_changes — matches plan's modify-action files
+  UT-GM-002: Correct not_advised_changes — Package.swift for unaffected engines + library + Makefile
   UT-GM-003: Correct allowed_new_files — matches plan's test_files
-  UT-GM-004: Minimal plan — single engine, large must_not_change
+  UT-GM-004: Minimal plan — single engine, large not_advised_changes
   UT-GM-005: Output schema — generated_from, generated_at, all arrays present
 
 Uses synthetic data — no external dependencies.
@@ -105,20 +105,20 @@ def make_plan(affected_engines, modify_files, test_files=None):
 
 
 # ---------------------------------------------------------------------------
-# UT-GM-001: Correct must_change
+# UT-GM-001: Correct advised_changes
 # ---------------------------------------------------------------------------
 
-class TestMustChange(unittest.TestCase):
-    """UT-GM-001: must_change matches plan's modify-action files exactly."""
+class TestAdvisedChanges(unittest.TestCase):
+    """UT-GM-001: advised_changes matches plan's modify-action files exactly."""
 
-    def test_must_change_from_modifications(self):
+    def test_advised_changes_from_modifications(self):
         plan = make_plan(
             ["RAGEngine", "OrchestrationEngine"],
             ["packages/AIPRDRAGEngine/Sources/BM25.swift",
              "packages/AIPRDOrchestrationEngine/Sources/Pipeline.swift"],
         )
         manifest = gm.generate(plan, ENGINE_GRAPH)
-        self.assertEqual(sorted(manifest["must_change"]), [
+        self.assertEqual(sorted(manifest["advised_changes"]), [
             "packages/AIPRDOrchestrationEngine/Sources/Pipeline.swift",
             "packages/AIPRDRAGEngine/Sources/BM25.swift",
         ])
@@ -129,14 +129,14 @@ class TestMustChange(unittest.TestCase):
             "packages/AIPRDRAGEngine/Sources/BM25.swift",
         ])
         manifest = gm.generate(plan, ENGINE_GRAPH)
-        self.assertEqual(len(manifest["must_change"]), 1)
+        self.assertEqual(len(manifest["advised_changes"]), 1)
 
 
 # ---------------------------------------------------------------------------
-# UT-GM-002: Correct must_not_change
+# UT-GM-002: Correct not_advised_changes
 # ---------------------------------------------------------------------------
 
-class TestMustNotChange(unittest.TestCase):
+class TestNotAdvisedChanges(unittest.TestCase):
     """UT-GM-002: Includes unaffected engine paths + Makefile."""
 
     def test_unaffected_engines_protected(self):
@@ -148,16 +148,16 @@ class TestMustNotChange(unittest.TestCase):
 
         # EncryptionEngine is unaffected, its path should be protected
         self.assertIn("packages/AIPRDEncryptionEngine",
-                       manifest["must_not_change"])
+                       manifest["not_advised_changes"])
         # RAGEngine is affected, should NOT be protected
         self.assertNotIn("packages/AIPRDRAGEngine",
-                          manifest["must_not_change"])
+                          manifest["not_advised_changes"])
 
     def test_makefile_always_protected(self):
         plan = make_plan(["RAGEngine"], ["packages/AIPRDRAGEngine/Sources/BM25.swift"])
         manifest = gm.generate(plan, ENGINE_GRAPH)
 
-        self.assertIn("Makefile", manifest["must_not_change"])
+        self.assertIn("Makefile", manifest["not_advised_changes"])
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ class TestAllowedNewFiles(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestMinimalPlan(unittest.TestCase):
-    """UT-GM-004: Single engine → small must_change, large must_not_change."""
+    """UT-GM-004: Single engine → small advised_changes, large not_advised_changes."""
 
     def test_single_engine_plan(self):
         plan = make_plan(
@@ -198,12 +198,12 @@ class TestMinimalPlan(unittest.TestCase):
         manifest = gm.generate(plan, ENGINE_GRAPH)
 
         # Only 1 file to change
-        self.assertEqual(len(manifest["must_change"]), 1)
+        self.assertEqual(len(manifest["advised_changes"]), 1)
 
         # 6 other engines protected + Makefile
         # SharedUtilities, RAGEngine, MetaPromptingEngine, VerificationEngine,
         # StrategyEngine, OrchestrationEngine = 6 engines
-        engine_protected = [p for p in manifest["must_not_change"]
+        engine_protected = [p for p in manifest["not_advised_changes"]
                            if p.startswith("packages/") and p != "Makefile"]
         self.assertEqual(len(engine_protected), 6)
 
@@ -221,8 +221,8 @@ class TestOutputSchema(unittest.TestCase):
 
         self.assertIn("generated_from", manifest)
         self.assertIn("generated_at", manifest)
-        self.assertIn("must_change", manifest)
-        self.assertIn("must_not_change", manifest)
+        self.assertIn("advised_changes", manifest)
+        self.assertIn("not_advised_changes", manifest)
         self.assertIn("allowed_new_files", manifest)
 
     def test_generated_from_is_finding_id(self):
@@ -260,7 +260,7 @@ class TestCLI(unittest.TestCase):
 
         with open(output_path) as f:
             manifest = json.load(f)
-        self.assertIn("must_change", manifest)
+        self.assertIn("advised_changes", manifest)
 
 
 if __name__ == "__main__":

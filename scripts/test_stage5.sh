@@ -259,8 +259,8 @@ EOF
     # Manifest
     cat > "$tmpdir/run_dir/manifest_tv-accepted.json" <<'EOF'
 {
-  "must_change": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
-  "must_not_change": ["packages/AIPRDEncryptionEngine/Package.swift"],
+  "advised_changes": ["packages/AIPRDRAGEngine/Sources/RAGEngineProtocol.swift"],
+  "not_advised_changes": ["packages/AIPRDEncryptionEngine/Package.swift"],
   "allowed_new_files": []
 }
 EOF

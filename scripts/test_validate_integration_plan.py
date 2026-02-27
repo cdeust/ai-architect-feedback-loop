@@ -175,7 +175,7 @@ class TestRejectedNoTouchpoints(unittest.TestCase):
         self.assertEqual(result, "REJECTED")
         check = next(c for c in checks if c["check"] == "cross_engine_connections")
         self.assertEqual(check["result"], "FAIL")
-        self.assertIn("single-engine", check["reason"])
+        self.assertIn("Zero cross-engine touchpoints", check["reason"])
 
 
 # ---------------------------------------------------------------------------

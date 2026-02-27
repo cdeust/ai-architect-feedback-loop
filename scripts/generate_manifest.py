@@ -6,8 +6,8 @@ Converts validated integration plans into the exact format consumed by
 Stage 10 Gate 2 (manifest compliance check in stage10-gates.sh).
 
 Produces:
-  - must_change: files from plan's modify-action entries
-  - must_not_change: critical files in unaffected engines
+  - advised_changes: files from plan's modify-action entries (advisory)
+  - not_advised_changes: critical files in unaffected engines (advisory)
   - allowed_new_files: plan's test files
 
 Usage:
@@ -47,29 +47,29 @@ def generate(plan, engine_graph):
 
     Returns manifest dict.
     """
-    # must_change: all modify-action file paths
-    must_change = []
+    # advised_changes: all modify-action file paths
+    advised_changes = []
     for mod in plan.get("modifications", []):
         for file_entry in mod.get("files", []):
             if file_entry.get("action") == "modify":
                 path = file_entry.get("path", "")
-                if path and path not in must_change:
-                    must_change.append(path)
+                if path and path not in advised_changes:
+                    advised_changes.append(path)
 
-    # must_not_change: critical config files in unaffected engines
+    # not_advised_changes: critical config files in unaffected engines
     affected = set(plan.get("affected_engines", []))
     all_engines = set(engine_graph.get("engines", {}).keys())
     unaffected = all_engines - affected
 
-    must_not_change = []
+    not_advised_changes = []
     engines_data = engine_graph.get("engines", {})
     for engine in sorted(unaffected):
         pkg_path = engines_data.get(engine, {}).get("package_path", "")
         if pkg_path:
-            must_not_change.append(pkg_path)
+            not_advised_changes.append(pkg_path)
 
     # Always protect these
-    must_not_change.append("Makefile")
+    not_advised_changes.append("Makefile")
 
     # allowed_new_files: plan's test files
     allowed_new_files = list(plan.get("test_files", []))
@@ -77,8 +77,8 @@ def generate(plan, engine_graph):
     return {
         "generated_from": plan.get("finding_id", "unknown"),
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "must_change": sorted(must_change),
-        "must_not_change": sorted(must_not_change),
+        "advised_changes": sorted(advised_changes),
+        "not_advised_changes": sorted(not_advised_changes),
         "allowed_new_files": sorted(allowed_new_files),
     }
 
@@ -118,8 +118,8 @@ def main(argv=None):
     print(json.dumps({
         "stage": "generate_manifest",
         "finding_id": plan.get("finding_id", "unknown"),
-        "must_change": len(manifest["must_change"]),
-        "must_not_change": len(manifest["must_not_change"]),
+        "advised_changes": len(manifest["advised_changes"]),
+        "not_advised_changes": len(manifest["not_advised_changes"]),
         "allowed_new_files": len(manifest["allowed_new_files"]),
         "status": "complete",
     }))
