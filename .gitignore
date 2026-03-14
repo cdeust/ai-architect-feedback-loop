@@ -9,3 +9,4 @@ __pycache__/
 *.pyc
 config/.config_resolved
 config/pipeline_preferences.json
+.claude/commands/
