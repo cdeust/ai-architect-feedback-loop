@@ -1,50 +1,17 @@
 # AI Architect Feedback Loop
 
-A fully autonomous 14-stage product improvement pipeline for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Feed it findings, get back pull requests.
-
-Works with **any tech stack** — Python, TypeScript, Go, Rust, Java, Kotlin, Swift, and more.
-
-## What it does
-
-- **Feed it issues, specs, or findings** from any source — code analysis tools, draft RFCs, design reviews, bug reports
-- **It analyzes impact, writes PRDs, implements code, and runs tests** — with 64 quality rules enforced automatically
-- **You get reviewed pull requests** with production-quality changes, one per finding
+**Feed it findings, get back pull requests.** A 14-stage autonomous pipeline for Claude Code that takes issues, specs, or research findings and turns them into production-ready PRs — with impact analysis, verified PRDs, tested implementations, and quality gates.
 
 ```
-  Findings ──> [ Analysis ] ──> [ Implementation ] ──> Pull Requests
-                 impact           code + tests          structured PR
-                 design           quality gates         per finding
-                 PRD gen          verification
+/plugin marketplace add cdeust/ai-architect-feedback-loop
+/plugin install ai-architect-feedback-loop
 ```
 
-## Quick start
+Then run `/run-pipeline` from your project. Free, open source, works with any tech stack.
 
-```bash
-# Requires: Claude Code, Python 3.10+, gh CLI (authenticated), git, jq, PyYAML
-git clone <this-repo-url> && cd feedback-loop
-export PIPELINE_BUILDER="/absolute/path/to/your-product"
-make setup        # wizard auto-detects your stack, installs license
-make pipeline-health  # verify everything is ready
-claude            # then type: /run-pipeline
-```
+---
 
-The setup wizard detects your project language, module structure, build/test commands, and git conventions. It generates `config/pipeline.yml` — the single source of truth for all settings. If your target repo has a `CLAUDE.md` describing its architecture, the pipeline uses it to enrich analysis and implementation.
-
-## Docker quickstart
-
-Run the pipeline in a container — zero dependencies to install:
-
-```bash
-make docker-build                                            # one-time
-TARGET_REPO=/path/to/your-product make docker-setup          # first time
-TARGET_REPO=/path/to/your-product make docker-run            # run pipeline
-```
-
-The container creates a **local clone** of your repo (original is mounted read-only), installs pre-commit hooks for quality gates, and runs Claude Code with `--dangerously-skip-permissions` (safe inside the container).
-
-Requires: Docker, `CLAUDE_CODE_OAUTH_TOKEN` (extracted from Keychain — see [docs/docker.md](docs/docker.md)), `GH_TOKEN` (GitHub auth), `~/.aiprd/license-key`.
-
-## What you get
+## What You Get
 
 A summary like this at the end of every run:
 
@@ -57,44 +24,65 @@ Findings analyzed: 3
 PRs created: 2
 ```
 
-Each PR includes: impact analysis, integration plan, PRD excerpt, quality enforcement results, semantic verification results, and retry history.
+Each PR includes: impact analysis, integration plan, PRD excerpt, quality enforcement results, semantic verification, and retry history.
 
-## How it works
+## How It Works
 
 | Phase | Stages | What happens |
 |---|---|---|
-| Discovery | 1 | Parse findings, filter by relevance, prioritize by multi-module impact |
-| Analysis | 2-6 | Impact scoring, integration design, PRD generation + review ([64 quality rules](docs/quality-rules.md) enforced) |
-| Implementation | 7-11 | Feature branch, code changes, build + test, quality gates, semantic verification (shared contract) |
-| Delivery | 12-14 | Benchmark, deployment simulation, PR creation per finding |
+| **Discovery** | 1 | Parse findings, filter by relevance, prioritize by multi-module impact |
+| **Analysis** | 2-6 | Impact scoring, integration design, PRD generation + review ([64 quality rules](docs/quality-rules.md) enforced) |
+| **Implementation** | 7-11 | Feature branch, code changes, build + test, quality gates, semantic verification |
+| **Delivery** | 12-14 | Benchmark, deployment simulation, PR creation per finding |
 
-Each finding retries up to 3 times. Manifest constraints (`advised_changes` / `not_advised_changes`) are advisory — implementation can drift when edge cases require it, without blocking the pipeline. Failed findings are skipped so the pipeline keeps moving.
+Each finding retries up to 3 times. Failed findings are skipped so the pipeline keeps moving. Full stage details: [docs/configuration.md](docs/configuration.md#pipeline-stages)
 
-Full stage details: [docs/configuration.md](docs/configuration.md#pipeline-stages)
+## Why This Exists
 
-## Configuration
+Most AI coding tools generate code from a prompt. This one:
 
-The setup wizard handles everything. To customize later:
+- **Starts from findings, not prompts** — feed it output from code analysis tools, design reviews, bug reports, or research papers
+- **Generates verified specs before code** — [9-file PRDs](https://github.com/cdeust/ai-prd-generator-plugin) with claim-by-claim verification, JIRA tickets, test cases
+- **Implements and tests autonomously** — feature branches, build + test cycles, quality gates, up to 3 retries
+- **Opens real PRs** — structured pull requests with full context, one per finding
 
-```bash
-# Edit the single config file
-vim config/pipeline.yml
+## Quick Start
 
-# Or see the fully commented example
-cat config/pipeline.yml.example
+### Via Claude Code Marketplace
+
+```
+/plugin marketplace add cdeust/ai-architect-feedback-loop
+/plugin install ai-architect-feedback-loop
 ```
 
-What you can customize:
-- Build/test commands, language, module structure
-- Branch naming, commit format, PR labels
-- Quality thresholds, max findings per run
-- Notification sound, nightly schedule
+### Manual Setup
 
-Full reference: [docs/configuration.md](docs/configuration.md)
+```bash
+git clone https://github.com/cdeust/ai-architect-feedback-loop.git
+cd ai-architect-feedback-loop
+export PIPELINE_BUILDER="/absolute/path/to/your-product"
+make setup            # wizard auto-detects your stack
+make pipeline-health  # verify everything is ready
+claude                # then type: /run-pipeline
+```
 
-## Feeding findings to the pipeline
+The setup wizard detects your project language, module structure, build/test commands, and git conventions. It generates `config/pipeline.yml` — the single source of truth for all settings.
 
-Findings are structured JSON items — issues, specs, or improvements for the pipeline to analyze and implement. Minimal example:
+### Docker (zero dependencies)
+
+```bash
+make docker-build                                    # one-time
+TARGET_REPO=/path/to/your-product make docker-setup  # first time
+TARGET_REPO=/path/to/your-product make docker-run   # run pipeline
+```
+
+The container clones your repo (original mounted read-only), installs quality gate hooks, and runs Claude Code in sandbox mode.
+
+Requires: Docker, `CLAUDE_CODE_OAUTH_TOKEN`, `GH_TOKEN`. Details: [docs/docker.md](docs/docker.md)
+
+## Feeding Findings
+
+Findings are structured JSON — issues, specs, or improvements for the pipeline to analyze and implement:
 
 ```json
 {
@@ -111,32 +99,48 @@ Findings are structured JSON items — issues, specs, or improvements for the pi
 }
 ```
 
-Full schema and field reference: [docs/findings-format.md](docs/findings-format.md)
+Full schema: [docs/findings-format.md](docs/findings-format.md)
+
+## Configuration
+
+The setup wizard handles everything. To customize later:
+
+```bash
+vim config/pipeline.yml
+```
+
+What you can customize: build/test commands, branch naming, commit format, PR labels, quality thresholds, max findings per run, notification sound, nightly schedule.
+
+Full reference: [docs/configuration.md](docs/configuration.md)
+
+## The PRD Generator
+
+Stage 5 uses the **[AI PRD Generator](https://github.com/cdeust/ai-prd-generator-plugin)** — a standalone plugin you can also use independently. It produces 9 verified files per PRD: overview, requirements, user stories, technical spec, acceptance criteria, roadmap, JIRA tickets, test cases, and a verification report.
+
+If you only need PRD generation (no pipeline), install that plugin directly:
+
+```
+/plugin marketplace add cdeust/ai-prd-generator-plugin
+/plugin install ai-prd-generator
+```
 
 ## Troubleshooting
 
 | Issue | Fix |
 |---|---|
 | `PIPELINE_BUILDER` not set | `export PIPELINE_BUILDER="/path/to/your-product"` |
-| `[FAIL] License key not found` | Run `make setup` or place your key at `~/.aiprd/license-key` |
-| `[FAIL] License invalid` | Verify your key at [ai-architect.tools](https://ai-architect.tools) |
-| `pipeline.yml` validation errors | Run `make validate-config` for detailed error messages |
-| PyYAML not installed | `pip install pyyaml` |
-| Stage 5 fails with "skill not found" | Ensure the `ai-prd-generator` skill is installed |
+| `pipeline.yml` validation errors | `make validate-config` for details |
+| Stage 5 fails with "skill not found" | Install the `ai-prd-generator` plugin |
 | Build failures in Stage 7 | Verify `build_command` in `pipeline.yml` works in your target repo |
-| Test failures in Stage 7 | Verify `test_command` in `pipeline.yml` works in your target repo |
-| `gh` errors in Stage 14 | Run `gh auth login` to authenticate the GitHub CLI |
-| Health check fails on tools | Add missing tools to your PATH or update `required_tools` in `pipeline.yml` |
-| Docker: `/workspace/target must be a git repository` | Set `TARGET_REPO` to a valid git repo path |
-| Docker: clone fails or wrong branch | Ensure your target repo has the `base_branch` configured in `project.json` |
-| Docker: permission denied on volumes | Check that `~/.claude`, `~/.config/gh`, and `~/.aiprd` exist and are readable |
+| `gh` errors in Stage 14 | `gh auth login` to authenticate |
+| Docker clone fails | Set `TARGET_REPO` to a valid git repo path |
 
-## License
+## System Requirements
 
-The `/run-pipeline` command is **free to use**.
-
-The pipeline depends on the **AI PRD Generator** skill at Stage 5. The PRD Generator is a licensed product and **requires a valid license key** from [ai-architect.tools](https://ai-architect.tools). The pipeline validates the license once at startup and reuses that validation for the entire run.
+- Python 3.10+, `gh` CLI (authenticated), git, jq, PyYAML
+- Claude Code (Anthropic)
+- Docker (optional, for containerized runs)
 
 ---
 
-Built by [Clement DEUST](https://ai-architect.tools) as part of the **AI Architect** toolchain — AI-powered developer tools for product engineering.
+Built by [Clement Deust](https://ai-architect.tools)

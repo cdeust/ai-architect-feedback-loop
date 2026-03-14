@@ -1,0 +1,8 @@
+{
+  "name": "ai-architect-feedback-loop",
+  "description": "14-stage autonomous pipeline — feed it findings, get back pull requests with verified PRDs, tested code, and quality gates",
+  "author": {
+    "name": "Clement Deust",
+    "email": "admin@ai-architect.tools"
+  }
+}

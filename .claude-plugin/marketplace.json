@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ai-architect-feedback-loop",
+  "id": "ai-architect-feedback-loop",
+  "owner": {
+    "name": "cdeust"
+  },
+  "metadata": {
+    "description": "14-stage autonomous pipeline: findings to pull requests with PRDs, tested implementations, and quality gates"
+  },
+  "plugins": [
+    {
+      "name": "ai-architect-feedback-loop",
+      "source": "./",
+      "description": "Feed it findings from any source — code analysis, design reviews, bug reports. Get back pull requests with impact analysis, verified PRDs, tested implementations, and quality enforcement.",
+      "author": {
+        "name": "Clement Deust",
+        "email": "admin@ai-architect.tools"
+      },
+      "keywords": ["pipeline", "automation", "prd", "verification", "deployment", "feedback-loop", "pull-requests"]
+    }
+  ]
+}
